@@ -522,3 +522,110 @@ fn urlenc(s: &str) -> String {
     }
     out
 }
+
+pub fn strays(server: &str, creds: &Credentials, prune: bool, dry_run: bool) -> Result<()> {
+    let s = match get(server, creds, "/api/strays") {
+        Ok(s) => s,
+        Err(e) if e.to_string().contains("scan not finished") => {
+            println!("server scan still running; try again shortly");
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
+    let strays = s["strays"]["strays"].as_array().cloned().unwrap_or_default();
+    let missing = s["strays"]["missing"].as_array().cloned().unwrap_or_default();
+    if strays.is_empty() && missing.is_empty() {
+        println!("store is clean: every file is accounted for by an active transaction");
+        return Ok(());
+    }
+    for x in &strays {
+        println!(
+            "{:>12}  {:<22} {}  ({})",
+            human(x["size"].as_u64().unwrap_or(0)),
+            x["kind"].as_str().unwrap_or(""),
+            x["rel_path"].as_str().unwrap_or(""),
+            x["detail"].as_str().unwrap_or("")
+        );
+    }
+    let t = &s["strays"]["totals"];
+    println!(
+        "\n{} stray files, {} apparent / {} on disk",
+        t["files"].as_u64().unwrap_or(0),
+        human(t["apparent"].as_u64().unwrap_or(0)),
+        human(t["disk"].as_u64().unwrap_or(0))
+    );
+    for m in &missing {
+        println!(
+            "MISSING payload: {}/{} (tx {:010})",
+            m["name"].as_str().unwrap_or(""),
+            m["hash"].as_str().unwrap_or(""),
+            m["tx"].as_u64().unwrap_or(0)
+        );
+    }
+    if prune {
+        if !dry_run {
+            let typed = prompt_line("permanently delete ALL strays listed? type 'prune' to confirm: ")?;
+            if typed != "prune" {
+                bail!("aborted");
+            }
+        }
+        let r = post(
+            server,
+            creds,
+            "/api/strays/prune",
+            &json!({ "all": true, "dry_run": dry_run }),
+        )?;
+        if dry_run {
+            println!(
+                "would remove {} files ({})",
+                r["files_removed"],
+                human(r["freed_apparent"].as_u64().unwrap_or(0))
+            );
+        } else if let Some(job) = r["job"].as_u64() {
+            let outcome = wait_for_job(server, creds, job)?;
+            println!(
+                "removed {} files and {} dirs, freeing {} apparent / {} on disk",
+                outcome["files_removed"],
+                outcome["dirs_removed"],
+                human(outcome["freed_apparent"].as_u64().unwrap_or(0)),
+                human(outcome["freed_disk"].as_u64().unwrap_or(0))
+            );
+        }
+    } else if !strays.is_empty() {
+        println!("\nrun with --prune to remove these (add --dry-run to preview)");
+    }
+    Ok(())
+}
+
+pub fn check(server: &str, creds: &Credentials) -> Result<()> {
+    let d = get(server, creds, "/api/check")?;
+    let mut rows: Vec<Value> = d["admin"].as_array().cloned().unwrap_or_default();
+    let deep_ran = !d["deep"].is_null();
+    rows.extend(d["deep"].as_array().cloned().unwrap_or_default());
+    let missing = d["missing_payloads"].as_array().cloned().unwrap_or_default();
+    if rows.is_empty() && missing.is_empty() {
+        println!(
+            "no problems found{}",
+            if deep_ran { "" } else { " (deep results pending; server scan still running)" }
+        );
+        return Ok(());
+    }
+    for f in &rows {
+        println!(
+            "{:<7} {:<20} {}: {}",
+            f["severity"].as_str().unwrap_or(""),
+            f["code"].as_str().unwrap_or(""),
+            f["subject"].as_str().unwrap_or(""),
+            f["message"].as_str().unwrap_or("")
+        );
+    }
+    for m in &missing {
+        println!(
+            "error   missing-payload      {}/{}: recorded by tx {:010} but not on disk",
+            m["name"].as_str().unwrap_or(""),
+            m["hash"].as_str().unwrap_or(""),
+            m["tx"].as_u64().unwrap_or(0)
+        );
+    }
+    Ok(())
+}

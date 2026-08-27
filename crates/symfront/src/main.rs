@@ -196,6 +196,10 @@ fn main() -> anyhow::Result<()> {
             } => {
                 return remote::upload(server, &creds, &paths, &product, &version, &comment, dry_run)
             }
+            Command::Strays { prune, dry_run } => {
+                return remote::strays(server, &creds, prune, dry_run)
+            }
+            Command::Check { deep: _ } => return remote::check(server, &creds),
             _ => anyhow::bail!(
                 "this command is local-only; drop --server or run it on the server host"
             ),

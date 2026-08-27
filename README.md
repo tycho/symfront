@@ -156,10 +156,16 @@ first ask the server which payloads it already has and skip those
 entirely (incremental builds transfer only what changed), then commit
 server-side as a background job that survives client disconnects.
 
+The web UI has an Upload page with the same behavior: files are
+identified client-side (headers only, nothing is read fully), payloads
+the store already has are skipped, and the commit runs as a server-side
+job. Drag-and-drop of files and folders is supported.
+
 ## Remote CLI
 
 `--server URL` (env `SYMFRONT_SERVER`) switches supported commands to
-the HTTP API: `status`, `search`, `tx list/show/del`, `upload`.
+the HTTP API: `status`, `search`, `tx list/show/del`, `upload`,
+`strays [--prune]`, and `check`.
 Authentication, in precedence order:
 
 1. `--token` / `SYMFRONT_TOKEN` — an API token; wins over a stored

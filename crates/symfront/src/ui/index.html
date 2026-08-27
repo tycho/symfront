@@ -112,6 +112,11 @@
                  margin-top: 8px; }
   .otpurl { font-family: var(--mono); font-size: 11.5px; word-break: break-all; color: var(--muted); }
   .rowbtns { display: flex; gap: 6px; }
+  .drop { border: 2px dashed var(--border); border-radius: 10px; padding: 28px;
+          text-align: center; color: var(--muted); margin: 12px 0; }
+  .drop.hover { border-color: var(--accent); color: var(--text); }
+  .drop label.btn { display: inline-block; margin: 0 4px; }
+  .pct { display: inline-block; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
   .userchip { font-size: 12px; color: var(--muted); }
   .userchip button { background: none; border: none; color: var(--accent); cursor: pointer;
                      font-size: 12px; padding: 0 0 0 6px; }
@@ -130,6 +135,7 @@
   <a href="#search" data-tab="search">Search</a>
   <a href="#strays" data-tab="strays">Strays</a>
   <a href="#check" data-tab="check">Check</a>
+  <a href="#upload" data-tab="upload" id="navUpload">Upload</a>
   <a href="#account" data-tab="account" id="navAccount" hidden>Account</a>
   <a href="#admin" data-tab="admin" id="navAdmin" hidden>Admin</a>
 </nav>
@@ -165,6 +171,28 @@
   </section>
 
   <section id="tab-check" hidden></section>
+
+  <section id="tab-upload" hidden>
+    <div class="toolbar">
+      <input type="text" id="upProduct" placeholder="product (required)">
+      <input type="text" id="upVersion" placeholder="version" style="width:180px">
+      <input type="text" id="upComment" placeholder="comment" style="width:240px">
+    </div>
+    <div class="drop" id="dropZone">
+      Drop files or folders here, or
+      <label class="btn">pick files<input type="file" id="upFiles" multiple hidden></label>
+      <label class="btn">pick a folder<input type="file" id="upDir" webkitdirectory hidden></label>
+      <div class="muted" style="margin-top:8px">PE binaries of any kind and PDBs are identified
+        by content in the browser; files the store already has are not re-uploaded.</div>
+    </div>
+    <div id="upList"></div>
+    <div class="toolbar">
+      <button class="btn" id="upStart" disabled>Upload</button>
+      <button class="btn" id="upClear" hidden>Clear</button>
+      <span id="upOut"></span>
+    </div>
+  </section>
+
   <section id="tab-account" hidden></section>
   <section id="tab-admin" hidden></section>
 
@@ -869,6 +897,250 @@ async function loadCheck() {
     </tbody></table>`;
 }
 
+/* ---------- upload page ---------- */
+/* IDENT-BEGIN — client-side port of symfront-core's ident (header reads only) */
+async function identifyFile(file) {
+  const bytes = async (off, len) => {
+    if (off >= file.size) return null;
+    const end = Math.min(off + len, file.size);
+    return new Uint8Array(await file.slice(off, end).arrayBuffer());
+  };
+  const u16 = (b, o) => b[o] | (b[o+1] << 8);
+  const u32 = (b, o) => (b[o] | (b[o+1] << 8) | (b[o+2] << 16) | (b[o+3] << 24)) >>> 0;
+  const guidHex = g => {
+    const h = (v, w) => v.toString(16).toUpperCase().padStart(w, '0');
+    let s = h(u32(g, 0), 8) + h(u16(g, 4), 4) + h(u16(g, 6), 4);
+    for (let i = 8; i < 16; i++) s += h(g[i], 2);
+    return s;
+  };
+  const head = await bytes(0, 64);
+  if (!head || head.length < 4) return null;
+
+  if (head[0] === 0x4D && head[1] === 0x5A) { // MZ -> PE
+    if (head.length < 0x40) return null;
+    const peOff = u32(head, 0x3c);
+    if (!peOff || peOff > 0x10000000) return null;
+    const pe = await bytes(peOff, 84);
+    if (!pe || pe.length < 84 || u32(pe, 0) !== 0x00004550) return null;
+    const ts = u32(pe, 8);
+    const optSize = u16(pe, 20), optMagic = u16(pe, 24);
+    if (optSize < 60 || (optMagic !== 0x10b && optMagic !== 0x20b)) return null;
+    const soi = u32(pe, 24 + 56);
+    return { kind: 'pe', hash: ts.toString(16).toUpperCase().padStart(8, '0') + soi.toString(16) };
+  }
+
+  const MSF = 'Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0';
+  if (head.length >= 32 && [...head.slice(0, 32)].every((b, i) => b === MSF.charCodeAt(i))) {
+    const sb = await bytes(32, 24);
+    if (!sb || sb.length < 24) return null;
+    const bs = u32(sb, 0), ndir = u32(sb, 12), bma = u32(sb, 20);
+    if (bs < 512 || bs > 65536 || (bs & (bs - 1)) || !ndir || ndir > 64 << 20) return null;
+    const nMapBlocks = Math.ceil(ndir / bs);
+    const map = await bytes(bma * bs, nMapBlocks * 4);
+    if (!map || map.length < nMapBlocks * 4) return null;
+    const dir = new Uint8Array(ndir);
+    let got = 0;
+    for (let i = 0; i < nMapBlocks; i++) {
+      const want = Math.min(bs, ndir - got);
+      const chunk = await bytes(u32(map, i * 4) * bs, want);
+      if (!chunk || chunk.length < want) return null;
+      dir.set(chunk, got); got += want;
+    }
+    const nStreams = u32(dir, 0);
+    if (nStreams < 2 || dir.length < 4 + nStreams * 4) return null;
+    const sizeOf = i => { const raw = u32(dir, 4 + i * 4); return raw === 0xFFFFFFFF ? 0 : raw; };
+    if (sizeOf(1) < 28) return null;
+    const firstBlockOf = i => {
+      let off = 4 + nStreams * 4;
+      for (let j = 0; j < i; j++) off += Math.ceil(sizeOf(j) / bs) * 4;
+      return dir.length < off + 4 ? null : u32(dir, off);
+    };
+    const ib = firstBlockOf(1);
+    if (ib === null) return null;
+    const info = await bytes(ib * bs, 28);
+    if (!info || info.length < 28) return null;
+    let age = u32(info, 8);
+    // Symbol-server keys use the DBI stream's age when present.
+    if (nStreams > 3 && sizeOf(3) >= 12) {
+      const db = firstBlockOf(3);
+      if (db !== null) {
+        const dbi = await bytes(db * bs, 12);
+        if (dbi && dbi.length >= 12) age = u32(dbi, 8);
+      }
+    }
+    return { kind: 'pdb', hash: guidHex(info.slice(12, 28)) + age.toString(16) };
+  }
+
+  if (head[0] === 0x42 && head[1] === 0x53 && head[2] === 0x4A && head[3] === 0x42) { // BSJB
+    const root = await bytes(0, 4096);
+    if (!root || root.length < 20) return null;
+    const vlen = u32(root, 12);
+    if (vlen > 256 || root.length < 16 + vlen + 4) return null;
+    let off = 16 + vlen;
+    const nStreams = u16(root, off + 2);
+    off += 4;
+    if (nStreams > 64) return null;
+    for (let i = 0; i < nStreams; i++) {
+      if (root.length < off + 8) return null;
+      const soff = u32(root, off);
+      off += 8;
+      const nameStart = off;
+      while (off < root.length && root[off] !== 0) { if (++off - nameStart > 32) return null; }
+      const name = String.fromCharCode(...root.slice(nameStart, off));
+      off = (off + 1 + 3) & ~3;
+      if (name === '#Pdb') {
+        const pid = await bytes(soff, 20);
+        if (!pid || pid.length < 20) return null;
+        return { kind: 'pdb', hash: guidHex(pid) + 'FFFFFFFF' };
+      }
+    }
+  }
+  return null;
+}
+/* IDENT-END */
+
+let upQueue = []; // {file, name, hash, kind, status, pct}
+let upBusy = false;
+
+async function addUploadFiles(files) {
+  const seen = new Set(upQueue.map(f => f.name.toLowerCase() + '\\' + f.hash.toLowerCase()));
+  let skipped = 0;
+  for (const file of files) {
+    const id = await identifyFile(file).catch(() => null);
+    if (!id) { skipped++; continue; }
+    const key = file.name.toLowerCase() + '\\' + id.hash.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    upQueue.push({ file, name: file.name, hash: id.hash, kind: id.kind, status: 'ready', pct: null });
+  }
+  if (skipped) $('#upOut').textContent = `${skipped} file(s) skipped (not PE/PDB)`;
+  renderUpQueue();
+}
+
+function renderUpQueue() {
+  $('#upStart').disabled = upBusy || !upQueue.length;
+  $('#upStart').textContent = upQueue.length ? `Upload ${upQueue.length} file(s)` : 'Upload';
+  $('#upClear').hidden = upBusy || !upQueue.length;
+  if (!upQueue.length) { $('#upList').innerHTML = ''; return; }
+  $('#upList').innerHTML = `
+    <table><thead><tr><th>file</th><th>kind</th><th>hash</th><th class="num">size</th><th>status</th></tr></thead><tbody>
+    ${upQueue.map(f => `<tr>
+      <td class="mono">${esc(f.name)}</td><td>${f.kind}</td>
+      <td class="mono break">${esc(f.hash)}</td>
+      <td class="num">${fmt(f.file.size)}</td>
+      <td>${esc(f.status)}${f.pct != null ? ` <span class="pct">${f.pct}%</span>` : ''}</td>
+    </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function xhrUpload(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(100 * e.loaded / e.total)); };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else {
+        let msg = xhr.statusText;
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error('network error'));
+    xhr.send(file);
+  });
+}
+
+async function startWebUpload() {
+  const product = $('#upProduct').value.trim();
+  if (!product) { $('#upOut').textContent = 'product is required'; $('#upProduct').focus(); return; }
+  upBusy = true;
+  $('#upStart').disabled = true;
+  const out = $('#upOut');
+  try {
+    out.textContent = 'starting…';
+    const begin = await post('api/upload/begin', {
+      product, version: $('#upVersion').value, comment: $('#upComment').value,
+    });
+    const uid = begin.upload_id;
+    const check = await post(`api/upload/${uid}/check`, {
+      files: upQueue.map(f => ({ name: f.name, hash: f.hash })),
+    });
+    for (let i = 0; i < upQueue.length; i++) {
+      const f = upQueue[i];
+      if (check.present[i]) { f.status = 'already in store'; renderUpQueue(); continue; }
+      f.status = 'uploading'; f.pct = 0; renderUpQueue();
+      const q = `name=${encodeURIComponent(f.name)}&hash=${encodeURIComponent(f.hash)}&source=${encodeURIComponent(f.file.webkitRelativePath || f.name)}`;
+      await xhrUpload(`api/upload/${uid}/file?${q}`, f.file, pct => {
+        f.pct = pct;
+        const row = $('#upList tbody')?.rows[i];
+        if (row) row.cells[4].innerHTML = `uploading <span class="pct">${pct}%</span>`;
+      });
+      f.status = 'uploaded'; f.pct = null; renderUpQueue();
+    }
+    out.textContent = 'committing…';
+    const commit = await post(`api/upload/${uid}/commit`, {
+      files: upQueue.map(f => ({
+        name: f.name, hash: f.hash, source: f.file.webkitRelativePath || f.name,
+      })),
+    });
+    // Watch the server-side add job to completion.
+    let outcome;
+    for (;;) {
+      const j = await api('api/jobs/' + commit.job);
+      if (j.state === 'done') { outcome = j.outcome; break; }
+      if (j.state === 'failed') throw new Error(j.error);
+      out.textContent = `committing… ${num(j.progress.done)}/${num(j.progress.total)}`;
+      await new Promise(r => setTimeout(r, 600));
+    }
+    out.innerHTML = `<span class="sev-info">✓ added transaction
+      <a href="#tx/${outcome.id}" class="mono">${pad(outcome.id)}</a> —
+      ${num(outcome.files_new)} new (${fmt(outcome.bytes_copied)}), ${num(outcome.files_deduped)} deduplicated</span>`;
+    upQueue = [];
+  } catch (e) {
+    out.innerHTML = `<span class="sev-error">${esc(e.message)}</span>`;
+  } finally {
+    upBusy = false;
+    renderUpQueue();
+  }
+}
+
+$('#upStart').addEventListener('click', startWebUpload);
+$('#upClear').addEventListener('click', () => { upQueue = []; $('#upOut').textContent = ''; renderUpQueue(); });
+$('#upFiles').addEventListener('change', e => addUploadFiles([...e.target.files]));
+$('#upDir').addEventListener('change', e => addUploadFiles([...e.target.files]));
+
+// Drag & drop, including directory traversal where supported.
+const dz = $('#dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('hover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('hover'));
+dz.addEventListener('drop', async e => {
+  e.preventDefault();
+  dz.classList.remove('hover');
+  const files = [];
+  const walkEntry = entry => new Promise(resolve => {
+    if (entry.isFile) entry.file(f => { files.push(f); resolve(); }, resolve);
+    else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readAll = () => reader.readEntries(async entries => {
+        if (!entries.length) return resolve();
+        for (const child of entries) await walkEntry(child);
+        readAll(); // readEntries returns batches; drain them all
+      }, resolve);
+      readAll();
+    } else resolve();
+  });
+  if (e.dataTransfer.items && [...e.dataTransfer.items].some(i => i.webkitGetAsEntry)) {
+    for (const item of [...e.dataTransfer.items]) {
+      const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+      if (entry) await walkEntry(entry);
+    }
+  } else {
+    files.push(...e.dataTransfer.files);
+  }
+  addUploadFiles(files);
+});
+
 /* ---------- account page ---------- */
 const dateOf = s => (s == null) ? 'never' : new Date(s * 1000).toLocaleDateString();
 
@@ -1082,6 +1354,7 @@ async function init() {
     $('#navAccount').hidden = false;
     if (me.user.role === 'admin') $('#navAdmin').hidden = false;
   }
+  $('#navUpload').hidden = !canMutate();
   renderUserChip();
   startEvents();
   refreshSummary();
