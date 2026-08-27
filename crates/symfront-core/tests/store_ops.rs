@@ -443,6 +443,12 @@ fn pdb_age_uses_dbi_stream() {
         // (file, expected hash from the paired DLL's RSDS record)
         ("Microsoft.ConfigCI.Commands.pdb", "57D8363310B240CCBC9CE9D78163C38D1"),
         ("Microsoft.Data.Entity.Build.Tasks.pdb", "F002579388CE46038E78A8AAB55AEAEE1"),
+        // Portable PDB (BSJB): GUID from #Pdb stream + literal FFFFFFFF;
+        // verified live: msdl serves this exact file under this key.
+        (
+            "Microsoft.NET.StringTools.pdb",
+            "E820FC90985942DBA3CD83B6AAB8EC3DFFFFFFFF",
+        ),
     ];
     for (name, expect) in cases {
         let path = dir.join(name);

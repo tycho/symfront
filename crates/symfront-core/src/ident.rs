@@ -7,8 +7,11 @@
 //! - PE image: hash = `%08X` TimeDateStamp (uppercase) + `%x` SizeOfImage
 //!   (lowercase, unpadded), e.g. `5685393Cbf000`.
 //! - PDB (MSF 7.0): hash = GUID as 32 uppercase hex digits + `%x` Age
-//!   (lowercase) from the PDB info stream, e.g.
-//!   `FBD847692A3A46DE84017F480ACF33891`.
+//!   (lowercase), e.g. `FBD847692A3A46DE84017F480ACF33891`. The age comes
+//!   from the DBI stream when present (what debuggers request via the PE's
+//!   RSDS record), falling back to the PDB info stream.
+//! - Portable PDB (.NET, `BSJB` magic): hash = GUID from the `#Pdb` stream
+//!   + literal `FFFFFFFF` (SSQP convention; verified against msdl).
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -49,6 +52,11 @@ pub fn identify(path: &Path) -> Result<Option<(FileKind, String)>> {
     }
     if n == 32 && &magic == MSF7_MAGIC {
         return Ok(pdb_hash(&mut f).map_err(|e| Error::io(path, e))?.map(|h| (FileKind::Pdb, h)));
+    }
+    if n >= 4 && &magic[0..4] == b"BSJB" {
+        return Ok(portable_pdb_hash(&mut f)
+            .map_err(|e| Error::io(path, e))?
+            .map(|h| (FileKind::Pdb, h)));
     }
     Ok(None)
 }
@@ -195,7 +203,12 @@ fn pdb_hash(f: &mut File) -> std::io::Result<Option<String>> {
             }
         }
     }
-    let guid = format!(
+    let guid = format_guid(g);
+    Ok(Some(format!("{guid}{age:x}")))
+}
+
+fn format_guid(g: &[u8]) -> String {
+    format!(
         "{:08X}{:04X}{:04X}{}",
         u32le(&g[0..4]),
         u16le(&g[4..6]),
@@ -204,8 +217,55 @@ fn pdb_hash(f: &mut File) -> std::io::Result<Option<String>> {
             .iter()
             .map(|b| format!("{b:02X}"))
             .collect::<String>()
-    );
-    Ok(Some(format!("{guid}{age:x}")))
+    )
+}
+
+/// GUID from the `#Pdb` stream of a portable PDB (ECMA-335 metadata root).
+/// The symbol-server key appends a literal FFFFFFFF instead of an age.
+fn portable_pdb_hash(f: &mut File) -> std::io::Result<Option<String>> {
+    // The metadata root and stream headers sit at the start and are tiny.
+    let mut buf = vec![0u8; 4096];
+    f.seek(SeekFrom::Start(0))?;
+    let n = read_up_to(f, &mut buf)?;
+    buf.truncate(n);
+    if buf.len() < 20 {
+        return Ok(None);
+    }
+    let vlen = u32le(&buf[12..16]) as usize;
+    if vlen > 256 || buf.len() < 16 + vlen + 4 {
+        return Ok(None);
+    }
+    let mut off = 16 + vlen; // version string is stored pre-padded to 4
+    let nstreams = u16le(&buf[off + 2..off + 4]) as usize;
+    off += 4;
+    if nstreams > 64 {
+        return Ok(None);
+    }
+    for _ in 0..nstreams {
+        if buf.len() < off + 8 {
+            return Ok(None);
+        }
+        let soff = u32le(&buf[off..]) as u64;
+        off += 8;
+        let name_start = off;
+        while off < buf.len() && buf[off] != 0 {
+            off += 1;
+            if off - name_start > 32 {
+                return Ok(None);
+            }
+        }
+        let name = &buf[name_start..off];
+        off = (off + 1 + 3) & !3; // NUL, then pad to 4
+        if name == b"#Pdb" {
+            // PDB id: 16-byte GUID + 4-byte stamp.
+            let mut pdb_id = [0u8; 20];
+            if !read_exact_at(f, soff, &mut pdb_id)? {
+                return Ok(None);
+            }
+            return Ok(Some(format!("{}FFFFFFFF", format_guid(&pdb_id[0..16]))));
+        }
+    }
+    Ok(None)
 }
 
 /// Recursively collect identifiable files under `paths` (files are taken
