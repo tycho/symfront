@@ -175,6 +175,11 @@ impl Store {
 
     /// Take the store-wide advisory write lock (flock on 000Admin/.symfront.lock).
     /// Held for the lifetime of the returned guard.
+    ///
+    /// Retries briefly rather than failing on the first EWOULDBLOCK: besides
+    /// short critical sections in concurrent operations, a fork() elsewhere in
+    /// the process (e.g. spawning a subprocess) can keep a just-released flock
+    /// alive for a moment via the child's inherited fd until its exec closes it.
     pub fn lock_exclusive(&self) -> Result<StoreLock> {
         use fs2::FileExt;
         let path = self.admin_dir().join(LOCKFILE);
@@ -184,8 +189,16 @@ impl Store {
             .truncate(false)
             .open(&path)
             .map_err(|e| Error::io(&path, e))?;
-        file.try_lock_exclusive().map_err(|_| Error::Locked)?;
-        Ok(StoreLock { _file: file })
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            match file.try_lock_exclusive() {
+                Ok(()) => return Ok(StoreLock { _file: file }),
+                Err(_) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(_) => return Err(Error::Locked),
+            }
+        }
     }
 }
 

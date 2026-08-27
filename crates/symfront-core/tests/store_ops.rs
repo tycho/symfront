@@ -335,26 +335,26 @@ fn ident_matches_live_store() {
     assert!(checked > 50, "only {checked} payloads checked");
 }
 
-/// Full add lifecycle with real PE/PDB payloads from the live store; skips
-/// when unavailable.
+/// Full add lifecycle, fully self-contained via synthetic fixtures.
 #[test]
 fn add_transaction_roundtrip() {
-    let live = Path::new("/srv/symstore/7zr.exe/5685393Cbf000/7zr.exe");
-    let live_pdb = Path::new("/srv/symstore/3dquicklogicplugin.pdb/FBD847692A3A46DE84017F480ACF33891/3dquicklogicplugin.pdb");
-    if !live.is_file() || !live_pdb.is_file() {
-        return;
-    }
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("store");
     fs::create_dir_all(root.join("000Admin")).unwrap();
     let src = tmp.path().join("src");
     fs::create_dir_all(&src).unwrap();
-    fs::copy(live, src.join("7zr.exe")).unwrap();
-    fs::copy(live_pdb, src.join("3dquicklogicplugin.pdb")).unwrap();
+    fs::write(src.join("7zr.exe"), fixtures::minimal_pe(0x5685393C, 0xbf000, true)).unwrap();
+    let guid = *b"\x69\x47\xd8\xfb\x3a\x2a\xde\x46\x84\x01\x7f\x48\x0a\xcf\x33\x89";
+    fs::write(
+        src.join("3dquicklogicplugin.pdb"),
+        fixtures::minimal_msf_pdb(guid, 1, Some(1)),
+    )
+    .unwrap();
+    fs::write(src.join("notes.txt"), b"not a symbol file").unwrap();
 
     let (candidates, skipped) = symfront_core::ident::collect(&[src.clone()]).unwrap();
     assert_eq!(candidates.len(), 2);
-    assert!(skipped.is_empty());
+    assert_eq!(skipped.len(), 1);
 
     let store = Store::open(&root).unwrap();
     let req = ops::AddRequest {
@@ -459,4 +459,283 @@ fn pdb_age_uses_dbi_stream() {
         assert_eq!(kind, symfront_core::ident::FileKind::Pdb);
         assert_eq!(hash, expect, "{name}");
     }
+}
+
+mod fixtures;
+
+fn data_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data")
+}
+
+/// The synthetic input files used by the checked-in reference stores.
+/// Regenerate with SYMFRONT_REGEN=1; otherwise the checked-in bytes must
+/// exactly match the generators (pins generator behavior).
+fn replay_inputs() -> Vec<(&'static str, Vec<u8>, &'static str)> {
+    vec![
+        ("a.exe", fixtures::minimal_pe(0x5FA00000, 0x3000, true), "5FA000003000"),
+        ("b.exe", fixtures::minimal_pe(0x5FB00000, 0x4000, false), "5FB000004000"),
+        ("shared.exe", fixtures::minimal_pe(0x5FC00000, 0x5000, true), "5FC000005000"),
+    ]
+}
+
+#[test]
+fn fixture_inputs_are_pinned() {
+    let dir = data_dir().join("inputs");
+    if std::env::var("SYMFRONT_REGEN").is_ok() {
+        fs::create_dir_all(&dir).unwrap();
+        for (name, bytes, _) in replay_inputs() {
+            fs::write(dir.join(name), &bytes).unwrap();
+        }
+        return;
+    }
+    for (name, bytes, hash) in replay_inputs() {
+        let on_disk = fs::read(dir.join(name)).unwrap();
+        assert_eq!(on_disk, bytes, "{name} drifted from its generator");
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        fs::write(tmp.path(), &bytes).unwrap();
+        let (kind, h) = symfront_core::ident::identify(tmp.path()).unwrap().unwrap();
+        assert_eq!(kind, symfront_core::ident::FileKind::Pe);
+        assert_eq!(h, hash, "{name}");
+    }
+}
+
+#[test]
+fn ident_synthetic() {
+    let tmp = tempfile::tempdir().unwrap();
+    let write = |name: &str, bytes: &[u8]| {
+        let p = tmp.path().join(name);
+        fs::write(&p, bytes).unwrap();
+        p
+    };
+    let guid = *b"\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f";
+    let ghex = fixtures::guid_hex(&guid);
+
+    let pe64 = write("x64.exe", &fixtures::minimal_pe(0x11223344, 0xABC00, true));
+    assert_eq!(symfront_core::ident::identify(&pe64).unwrap().unwrap().1, "11223344abc00");
+    let pe32 = write("x86.exe", &fixtures::minimal_pe(0x01020304, 0x1000, false));
+    assert_eq!(symfront_core::ident::identify(&pe32).unwrap().unwrap().1, "010203041000");
+
+    // Age mismatch: DBI age (1) must win over info age (3).
+    let pdb = write("m.pdb", &fixtures::minimal_msf_pdb(guid, 3, Some(1)));
+    assert_eq!(symfront_core::ident::identify(&pdb).unwrap().unwrap().1, format!("{ghex}1"));
+    // No DBI stream: info age is the fallback.
+    let pdb2 = write("n.pdb", &fixtures::minimal_msf_pdb(guid, 3, None));
+    assert_eq!(symfront_core::ident::identify(&pdb2).unwrap().unwrap().1, format!("{ghex}3"));
+    // Portable PDB: literal FFFFFFFF.
+    let ppdb = write("p.pdb", &fixtures::minimal_portable_pdb(guid));
+    assert_eq!(
+        symfront_core::ident::identify(&ppdb).unwrap().unwrap().1,
+        format!("{ghex}FFFFFFFF")
+    );
+    // Garbage is skipped, not an error.
+    let junk = write("junk.bin", b"not a pe or pdb at all");
+    assert!(symfront_core::ident::identify(&junk).unwrap().is_none());
+}
+
+/// The checked-in single-add store produced by real symstore.exe: we must
+/// parse it cleanly and our identification must agree with its layout.
+#[test]
+fn reference_store_parses_and_hashes_match() {
+    let root = data_dir().join("refstore");
+    let store = Store::open(&root).unwrap();
+    let index = StoreIndex::load(&store).unwrap();
+    assert_eq!(index.active_transactions().count(), 1);
+    assert_eq!(index.entries.len(), 1);
+    let e = &index.entries[0];
+    assert_eq!(e.name, "symfronttest.exe");
+    assert_eq!(e.hash, "5F0000003000");
+    let payload = root.join("symfronttest.exe/5F0000003000/symfronttest.exe");
+    let (_, h) = symfront_core::ident::identify(&payload).unwrap().unwrap();
+    assert_eq!(h, e.hash);
+    assert!(check::check_admin(&store, &index).unwrap().is_empty());
+    let scan = scan::scan(&store, true, &ScanProgress::default()).unwrap();
+    let report = strays::analyze(&index, &scan).strays;
+    assert!(report.strays.is_empty() && report.missing.is_empty(), "{:?}", report.strays);
+}
+
+// ---- replay: add, add (shared), del, re-add ----
+
+fn replay_with_ours(root: &Path) {
+    let inputs = data_dir().join("inputs");
+    fs::create_dir_all(root.join("000Admin")).unwrap();
+    let store = Store::open(root).unwrap();
+    let add = |files: &[&str]| {
+        let req = ops::AddRequest {
+            product: "Replay".into(),
+            version: "1.0".into(),
+            comment: "".into(),
+            consume: false,
+            files: files
+                .iter()
+                .map(|n| {
+                    let path = inputs.join(n);
+                    let (kind, hash) = symfront_core::ident::identify(&path).unwrap().unwrap();
+                    ops::AddFile {
+                        path: path.clone(),
+                        name: n.to_string(),
+                        hash,
+                        kind,
+                        source: path.to_string_lossy().into_owned(),
+                    }
+                })
+                .collect(),
+        };
+        ops::add_transaction(&store, &req, false, &ops::OpProgress::default()).unwrap();
+    };
+    add(&["a.exe", "shared.exe"]); // tx 1
+    add(&["b.exe", "shared.exe"]); // tx 2
+    ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default())
+        .unwrap(); // tx 3 = del 1
+    add(&["a.exe"]); // tx 4
+}
+
+/// Normalized view of a store tree for comparison: payload file list +
+/// per-dir refs.ptr (txid, tag) sequences + admin record shapes.
+fn tree_summary(root: &Path) -> Vec<String> {
+    let store = Store::open(root).unwrap();
+    let index = StoreIndex::load(&store).unwrap();
+    let mut out = Vec::new();
+    let scan = scan::scan(&store, true, &ScanProgress::default()).unwrap();
+    for d in &scan.hash_dirs {
+        for f in &d.files {
+            if f.name.eq_ignore_ascii_case("refs.ptr") {
+                let text = fs::read_to_string(root.join(&d.name).join(&d.hash).join(&f.name)).unwrap();
+                let refs: Vec<String> = symfront_core::format::lines(&text)
+                    .map(|l| {
+                        let fields: Vec<&str> = l.split(',').collect();
+                        format!("{},{},{}", fields[0], fields[1], fields[3])
+                    })
+                    .collect();
+                out.push(format!("{}/{} refs: {}", d.name, d.hash, refs.join(" | ")));
+            } else {
+                out.push(format!("{}/{} payload: {} ({} bytes)", d.name, d.hash, f.name, f.size));
+            }
+        }
+    }
+    for t in index.transactions.values() {
+        out.push(format!(
+            "tx {} state={:?} deleted_by={:?} entries={} product={:?}",
+            t.id,
+            t.file_state,
+            t.deleted_by.iter().map(|d| d.0).collect::<Vec<_>>(),
+            t.entry_count,
+            t.record.as_ref().map(|r| r.product.clone()).unwrap_or_default(),
+        ));
+    }
+    out.push(format!("lastid={:?}", store.read_lastid().unwrap()));
+    out.sort();
+    out
+}
+
+/// Replay the scripted sequence with our code and compare against the
+/// checked-in tree that real symstore.exe produced for the same script.
+#[test]
+fn replay_matches_symstore_reference() {
+    let reference = data_dir().join("refstore-replay");
+    let tmp = tempfile::tempdir().unwrap();
+    let ours = tmp.path().join("store");
+    replay_with_ours(&ours);
+    let (a, b) = (tree_summary(&ours), tree_summary(&reference));
+    assert_eq!(a, b, "replayed tree differs from symstore.exe reference");
+    // Payload bytes must be identical too.
+    for (name, bytes, hash) in replay_inputs() {
+        let rel = format!("{name}/{hash}/{name}");
+        let ref_payload = reference.join(&rel);
+        if ref_payload.exists() {
+            assert_eq!(fs::read(ref_payload).unwrap(), bytes, "{rel}");
+            assert_eq!(fs::read(ours.join(&rel)).unwrap(), bytes, "{rel}");
+        }
+    }
+}
+
+/// Live differential test against the bundled symstore.exe (tests/tools/):
+/// run the same add/add/del/add script through both implementations and
+/// compare the resulting trees. Runs under wine on Unix (or natively on
+/// Windows); skips silently when neither can execute it.
+#[test]
+fn differential_replay_vs_bundled_symstore() {
+    let tools = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tools/symstore.exe");
+    let runner: &[&str] = if cfg!(windows) { &[] } else { &["wine"] };
+    let available = std::process::Command::new(runner.first().copied().unwrap_or("cmd"))
+        .arg(if runner.is_empty() { "/c" } else { "--version" })
+        .arg(if runner.is_empty() { "ver" } else { "" })
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !available || !tools.is_file() {
+        eprintln!("skipping: no way to execute symstore.exe here");
+        return;
+    }
+    let winepath = |p: &Path| -> String {
+        if cfg!(windows) {
+            p.to_string_lossy().into_owned()
+        } else {
+            format!("Z:{}", p.to_string_lossy().replace('/', "\\"))
+        }
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let inputs = data_dir().join("inputs");
+    let dirs = ["dir1", "dir2", "dir3"];
+    for d in dirs {
+        fs::create_dir_all(tmp.path().join(d)).unwrap();
+    }
+    for (d, files) in dirs.iter().zip([
+        &["a.exe", "shared.exe"][..],
+        &["b.exe", "shared.exe"][..],
+        &["a.exe"][..],
+    ]) {
+        for f in files {
+            fs::copy(inputs.join(f), tmp.path().join(d).join(f)).unwrap();
+        }
+    }
+    let theirs = tmp.path().join("theirs");
+    let sym = |args: &[String]| {
+        let mut cmd = if runner.is_empty() {
+            std::process::Command::new(&tools)
+        } else {
+            let mut c = std::process::Command::new(runner[0]);
+            c.arg(&tools);
+            c
+        };
+        cmd.env("WINEDEBUG", "-all");
+        let out = cmd.args(args).output().expect("running symstore.exe");
+        assert!(out.status.success(), "symstore.exe failed: {args:?}");
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(
+            !text.contains("Number of errors = 1"),
+            "symstore.exe reported errors: {text}"
+        );
+    };
+    let add = |dir: &str| {
+        sym(&[
+            "add".into(),
+            "/r".into(),
+            "/f".into(),
+            format!("{}\\*", winepath(&tmp.path().join(dir))),
+            "/s".into(),
+            winepath(&theirs),
+            "/t".into(),
+            "Replay".into(),
+            "/v".into(),
+            "1.0".into(),
+        ]);
+    };
+    add("dir1");
+    add("dir2");
+    sym(&[
+        "del".into(),
+        "/i".into(),
+        "0000000001".into(),
+        "/s".into(),
+        winepath(&theirs),
+    ]);
+    add("dir3");
+
+    let ours = tmp.path().join("ours");
+    replay_with_ours(&ours);
+    assert_eq!(
+        tree_summary(&ours),
+        tree_summary(&theirs),
+        "our replay diverged from live symstore.exe"
+    );
 }
