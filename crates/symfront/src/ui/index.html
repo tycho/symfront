@@ -101,6 +101,17 @@
   #login h2 { margin: 0 0 6px; font-size: 18px; }
   #login input { width: 100%; }
   #login .err { color: var(--err); font-size: 13px; min-height: 18px; }
+  .acct { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px;
+          align-items: start; }
+  .acct .card h3 { margin: 0 0 10px; }
+  .acct form { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .acct input, .acct select { width: 100%; }
+  .qrwrap { background: #fff; border-radius: 8px; padding: 8px; display: inline-block; }
+  .tokenreveal { background: var(--panel2); border: 1px solid var(--warn); border-radius: 6px;
+                 padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; word-break: break-all;
+                 margin-top: 8px; }
+  .otpurl { font-family: var(--mono); font-size: 11.5px; word-break: break-all; color: var(--muted); }
+  .rowbtns { display: flex; gap: 6px; }
   .userchip { font-size: 12px; color: var(--muted); }
   .userchip button { background: none; border: none; color: var(--accent); cursor: pointer;
                      font-size: 12px; padding: 0 0 0 6px; }
@@ -119,6 +130,8 @@
   <a href="#search" data-tab="search">Search</a>
   <a href="#strays" data-tab="strays">Strays</a>
   <a href="#check" data-tab="check">Check</a>
+  <a href="#account" data-tab="account" id="navAccount" hidden>Account</a>
+  <a href="#admin" data-tab="admin" id="navAdmin" hidden>Admin</a>
 </nav>
 <main id="main">
   <section id="tab-overview"></section>
@@ -152,6 +165,8 @@
   </section>
 
   <section id="tab-check" hidden></section>
+  <section id="tab-account" hidden></section>
+  <section id="tab-admin" hidden></section>
 
   <section id="tab-tx" hidden>
     <div class="toolbar">
@@ -167,8 +182,11 @@
     <h2>symfront</h2>
     <input type="text" id="loginUser" placeholder="username" autocomplete="username" autofocus>
     <input type="password" id="loginPass" placeholder="password" autocomplete="current-password">
+    <input type="text" id="loginCode" placeholder="authenticator code" autocomplete="one-time-code"
+           inputmode="numeric" hidden>
     <div class="err" id="loginErr"></div>
-    <button class="btn" type="submit">Sign in</button>
+    <button class="btn" type="submit" id="loginSubmit">Sign in</button>
+    <button class="btn" type="button" id="passkeyBtn" hidden>Use a passkey instead</button>
   </form>
 </div>
 
@@ -196,17 +214,58 @@ async function api(path, opts) {
 /* ---------- authentication ---------- */
 let me = null;
 const canMutate = () => !me?.auth_enabled || (me.user && me.user.role !== 'ro');
-function showLogin() { $('#login').hidden = false; $('#loginUser').focus(); }
+const post = (path, body) => api(path, {
+  method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body ?? {}),
+});
+function showLogin() {
+  $('#login').hidden = false;
+  $('#passkeyBtn').hidden = !(me?.webauthn_available && window.PublicKeyCredential);
+  $('#loginUser').focus();
+}
+let pendingLoginToken = null;
+function resetLoginForm() {
+  pendingLoginToken = null;
+  $('#loginPass').hidden = false;
+  $('#loginCode').hidden = true;
+  $('#loginCode').value = '';
+  $('#loginSubmit').textContent = 'Sign in';
+}
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   $('#loginErr').textContent = '';
   try {
-    await api('/api/login', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({username: $('#loginUser').value, password: $('#loginPass').value}),
-    });
+    if (pendingLoginToken) {
+      await post('/api/login/totp', {login_token: pendingLoginToken, code: $('#loginCode').value});
+      location.reload();
+      return;
+    }
+    const r = await post('/api/login', {username: $('#loginUser').value, password: $('#loginPass').value});
+    if (r.totp_required) {
+      pendingLoginToken = r.login_token;
+      $('#loginPass').hidden = true;
+      $('#loginCode').hidden = false;
+      $('#loginSubmit').textContent = 'Verify code';
+      $('#loginCode').focus();
+      return;
+    }
     location.reload();
-  } catch (err) { $('#loginErr').textContent = err.message; }
+  } catch (err) {
+    $('#loginErr').textContent = err.message;
+    // A failed TOTP consumes the pending login; back to square one.
+    if (pendingLoginToken) resetLoginForm();
+  }
+});
+$('#passkeyBtn').addEventListener('click', async () => {
+  $('#loginErr').textContent = '';
+  const username = $('#loginUser').value.trim();
+  if (!username) { $('#loginErr').textContent = 'enter your username first'; return; }
+  try {
+    const s = await post('/api/login/webauthn/start', {username});
+    const opts = PublicKeyCredential.parseRequestOptionsFromJSON(s.challenge.publicKey);
+    const cred = await navigator.credentials.get({publicKey: opts});
+    await post('/api/login/webauthn/finish', {login_token: s.login_token, credential: cred.toJSON()});
+    location.reload();
+  } catch (err) { $('#loginErr').textContent = err.message || String(err); }
 });
 function renderUserChip() {
   if (!me?.user) { $('#userChip').innerHTML = ''; return; }
@@ -255,7 +314,8 @@ function route() {
   $('#main').classList.toggle('wide', tab === 'tx');
   closeDetail();
   if (txMatch) openTxPage(+txMatch[1]);
-  else ({overview: renderOverview, transactions: loadTransactions, strays: loadStrays, check: loadCheck}[tab] || (()=>{}))();
+  else ({overview: renderOverview, transactions: loadTransactions, strays: loadStrays,
+         check: loadCheck, account: loadAccount, admin: loadAdmin}[tab] || (()=>{}))();
 }
 window.addEventListener('hashchange', route);
 
@@ -806,9 +866,219 @@ async function loadCheck() {
     </tbody></table>`;
 }
 
+/* ---------- account page ---------- */
+const dateOf = s => (s == null) ? 'never' : new Date(s * 1000).toLocaleDateString();
+
+async function loadAccount() {
+  const el = $('#tab-account');
+  el.innerHTML = '<p class="muted">loading…</p>';
+  let a;
+  try { a = await api('/api/account'); }
+  catch (e) { el.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
+  const caps = a.role === 'ro' ? ['ro'] : ['ro', 'rw'];
+  el.innerHTML = `
+    <div class="acct">
+      <div class="card"><h3>Password</h3>
+        <form id="pwForm">
+          ${a.has_password ? '<input type="password" id="pwCur" placeholder="current password" autocomplete="current-password">' : '<p class="muted">No password set (token-only account); setting one enables web login.</p>'}
+          <input type="password" id="pwNew" placeholder="new password (min 8 chars)" autocomplete="new-password">
+          <input type="password" id="pwNew2" placeholder="repeat new password" autocomplete="new-password">
+          <button class="btn" type="submit">${a.has_password ? 'Change password' : 'Set password'}</button>
+          <span id="pwOut"></span>
+        </form>
+      </div>
+      <div class="card"><h3>Two-factor (TOTP)</h3>
+        <div id="totpBox">
+          ${a.totp_enabled
+            ? `<p>TOTP is <b>enabled</b>: codes are required when signing in with a password.</p>
+               <form id="totpDisableForm">
+                 <input type="text" id="totpDisableCode" placeholder="current code" inputmode="numeric" autocomplete="one-time-code">
+                 <button class="btn danger" type="submit">Disable TOTP</button>
+                 <span id="totpOut"></span>
+               </form>`
+            : `<p class="muted">Adds a 6-digit authenticator code to password sign-ins. Passkey sign-ins skip it.</p>
+               <button class="btn" id="totpSetupBtn">Enable TOTP…</button>
+               <div id="totpSetup"></div>`}
+        </div>
+      </div>
+      <div class="card"><h3>Passkeys</h3>
+        ${a.webauthn_available ? '' : '<p class="muted">WebAuthn is not configured on this server (set --webauthn-origin; browsers also require localhost or HTTPS).</p>'}
+        <table><tbody id="pkList">
+          ${a.passkeys.map(p => `<tr><td>${esc(p.name) || '<span class="muted">(unnamed)</span>'}</td>
+            <td class="muted">added ${dateOf(p.created_at)}, last used ${dateOf(p.last_used_at)}</td>
+            <td><button class="btn danger" data-pk="${p.id}">remove</button></td></tr>`).join('')}
+        </tbody></table>
+        ${a.webauthn_available ? '<p><button class="btn" id="pkAddBtn">Add passkey…</button> <span id="pkOut"></span></p>' : ''}
+      </div>
+      <div class="card"><h3>API tokens</h3>
+        <p class="muted">For headless clients (uploads, scripts): <span class="mono">Authorization: Bearer sf_…</span>. Tokens cannot access the web UI or account settings.</p>
+        <table><tbody>
+          ${a.tokens.map(t => `<tr><td>${esc(t.label) || '<span class="muted">(unlabeled)</span>'}</td>
+            <td><span class="pill ${t.cap === 'rw' ? 'active' : 'anomalous'}">${t.cap === 'rw' ? 'read-write' : 'read-only'}</span></td>
+            <td class="muted">created ${dateOf(t.created_at)}, last used ${dateOf(t.last_used_at)}</td>
+            <td><button class="btn danger" data-tok="${t.id}">revoke</button></td></tr>`).join('')}
+        </tbody></table>
+        <form id="tokForm">
+          <input type="text" id="tokLabel" placeholder="label, e.g. ci uploads">
+          <select id="tokCap">${caps.map(c => `<option value="${c}">${c === 'rw' ? 'read-write' : 'read-only'}</option>`).join('')}</select>
+          <button class="btn" type="submit">Create token</button>
+        </form>
+        <div id="tokReveal"></div>
+      </div>
+    </div>`;
+
+  $('#pwForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const out = $('#pwOut'); out.textContent = '';
+    if ($('#pwNew').value !== $('#pwNew2').value) { out.textContent = 'passwords do not match'; return; }
+    try {
+      await post('/api/account/password', {
+        current_password: $('#pwCur') ? $('#pwCur').value : '',
+        new_password: $('#pwNew').value,
+      });
+      out.textContent = '✓ updated';
+      $('#pwNew').value = $('#pwNew2').value = '';
+    } catch (err) { out.textContent = err.message; }
+  });
+
+  const setupBtn = $('#totpSetupBtn');
+  if (setupBtn) setupBtn.addEventListener('click', async () => {
+    const box = $('#totpSetup');
+    const s = await post('/api/account/totp/setup');
+    box.innerHTML = `
+      <p>Scan with your authenticator app, or paste the URL into a password manager:</p>
+      <div class="qrwrap">${s.qr_svg}</div>
+      <p class="otpurl">${esc(s.otpauth_url)}</p>
+      <form id="totpEnableForm">
+        <input type="text" id="totpCode" placeholder="6-digit code from the app" inputmode="numeric" autocomplete="one-time-code">
+        <button class="btn" type="submit">Verify &amp; enable</button>
+        <span id="totpEnableOut"></span>
+      </form>`;
+    $('#totpEnableForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      try {
+        await post('/api/account/totp/enable', {secret: s.secret, code: $('#totpCode').value});
+        loadAccount();
+      } catch (err) { $('#totpEnableOut').textContent = err.message; }
+    });
+  });
+  const disableForm = $('#totpDisableForm');
+  if (disableForm) disableForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      await post('/api/account/totp/disable', {code: $('#totpDisableCode').value});
+      loadAccount();
+    } catch (err) { $('#totpOut').textContent = err.message; }
+  });
+
+  document.querySelectorAll('[data-pk]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Remove this passkey?')) return;
+    await api('/api/account/passkeys/' + b.dataset.pk, {method: 'DELETE'});
+    loadAccount();
+  }));
+  const pkAdd = $('#pkAddBtn');
+  if (pkAdd) pkAdd.addEventListener('click', async () => {
+    const out = $('#pkOut'); out.textContent = '';
+    const name = prompt('Name for this passkey (e.g. "yubikey", "laptop"):');
+    if (name === null) return;
+    try {
+      if (!window.PublicKeyCredential) throw new Error('this browser/context does not support WebAuthn (needs localhost or HTTPS)');
+      const s = await post('/api/account/passkeys/register/start');
+      const opts = PublicKeyCredential.parseCreationOptionsFromJSON(s.challenge.publicKey);
+      const cred = await navigator.credentials.create({publicKey: opts});
+      await post('/api/account/passkeys/register/finish', {reg_token: s.reg_token, name, credential: cred.toJSON()});
+      loadAccount();
+    } catch (err) { out.textContent = err.message || String(err); }
+  });
+
+  document.querySelectorAll('[data-tok]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm('Revoke this token? Clients using it stop working immediately.')) return;
+    await api('/api/account/tokens/' + b.dataset.tok, {method: 'DELETE'});
+    loadAccount();
+  }));
+  $('#tokForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      const r = await post('/api/account/tokens', {label: $('#tokLabel').value, cap: $('#tokCap').value});
+      $('#tokReveal').innerHTML = `<div class="tokenreveal">${esc(r.token)}<br>
+        <span class="muted">shown once — copy it now</span>
+        <button class="btn" style="float:right" onclick="navigator.clipboard.writeText('${esc(r.token)}')">copy</button></div>`;
+    } catch (err) { $('#tokReveal').innerHTML = `<span class="sev-error">${esc(err.message)}</span>`; }
+  });
+}
+
+/* ---------- admin page ---------- */
+async function loadAdmin() {
+  const el = $('#tab-admin');
+  el.innerHTML = '<p class="muted">loading…</p>';
+  let d;
+  try { d = await api('/api/admin/users'); }
+  catch (e) { el.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
+  el.innerHTML = `
+    <table><thead><tr><th>user</th><th>role</th><th>auth methods</th><th>tokens</th><th></th></tr></thead><tbody>
+    ${d.users.map(u => {
+      const self = u.name === me.user.name;
+      return `<tr>
+      <td>${esc(u.name)}${self ? ' <span class="muted">(you)</span>' : ''}</td>
+      <td>${self ? esc(u.role) : `<select data-role-user="${esc(u.name)}">
+        ${['ro','rw','admin'].map(r => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}
+      </select>`}</td>
+      <td class="muted">${u.has_password ? 'password' : 'token-only'}${u.totp_enabled ? ' + TOTP' : ''}${u.passkeys ? ` + ${u.passkeys} passkey(s)` : ''}</td>
+      <td class="num">${u.tokens}</td>
+      <td class="rowbtns">${self ? '<span class="muted">use Account page</span>' : `
+        <button class="btn" data-pw-user="${esc(u.name)}">reset password</button>
+        <button class="btn" data-2fa-user="${esc(u.name)}">reset 2FA</button>
+        <button class="btn danger" data-del-user="${esc(u.name)}">delete</button>`}</td>
+    </tr>`;}).join('')}
+    </tbody></table>
+    <h3>Add user</h3>
+    <form id="addUserForm" class="toolbar">
+      <input type="text" id="nuName" placeholder="username">
+      <select id="nuRole"><option value="ro">ro</option><option value="rw" selected>rw</option><option value="admin">admin</option></select>
+      <input type="password" id="nuPass" placeholder="password (blank = token-only)">
+      <button class="btn" type="submit">Create</button>
+      <span id="nuOut"></span>
+    </form>`;
+  document.querySelectorAll('[data-role-user]').forEach(s => s.addEventListener('change', async () => {
+    try { await post(`/api/admin/users/${encodeURIComponent(s.dataset.roleUser)}/role`, {role: s.value}); }
+    catch (e) { alert(e.message); loadAdmin(); }
+  }));
+  document.querySelectorAll('[data-pw-user]').forEach(b => b.addEventListener('click', async () => {
+    const pw = prompt(`New password for ${b.dataset.pwUser} (min 8 chars):`);
+    if (pw === null) return;
+    try { await post(`/api/admin/users/${encodeURIComponent(b.dataset.pwUser)}/password`, {password: pw}); loadAdmin(); }
+    catch (e) { alert(e.message); }
+  }));
+  document.querySelectorAll('[data-2fa-user]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm(`Clear TOTP and all passkeys for ${b.dataset['2faUser'] ?? b.getAttribute('data-2fa-user')}? They'll sign in with password only.`)) return;
+    const name = b.getAttribute('data-2fa-user');
+    try { await post(`/api/admin/users/${encodeURIComponent(name)}/reset-2fa`); loadAdmin(); }
+    catch (e) { alert(e.message); }
+  }));
+  document.querySelectorAll('[data-del-user]').forEach(b => b.addEventListener('click', async () => {
+    if (!confirm(`Delete user ${b.dataset.delUser}? Their tokens and sessions are revoked.`)) return;
+    try { await api('/api/admin/users/' + encodeURIComponent(b.dataset.delUser), {method: 'DELETE'}); loadAdmin(); }
+    catch (e) { alert(e.message); }
+  }));
+  $('#addUserForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const out = $('#nuOut'); out.textContent = '';
+    const pw = $('#nuPass').value;
+    try {
+      await post('/api/admin/users', {name: $('#nuName').value.trim(), role: $('#nuRole').value,
+                                      password: pw ? pw : null});
+      loadAdmin();
+    } catch (err) { out.textContent = err.message; }
+  });
+}
+
 async function init() {
   try { me = await api('/api/me'); } catch { me = { auth_enabled: false, user: null }; }
   if (me.auth_enabled && !me.user) { showLogin(); return; }
+  if (me.user) {
+    $('#navAccount').hidden = false;
+    if (me.user.role === 'admin') $('#navAdmin').hidden = false;
+  }
   renderUserChip();
   startEvents();
   refreshSummary();

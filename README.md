@@ -81,13 +81,27 @@ $ symfront token create ci-bot --label "ci uploads"  # prints sf_… once
 $ symfront serve
 ```
 
-- Roles: `ro` (browse/search only), `rw` (mutations too), `admin`
-  (reserved for future API-side user management; CLI manages users today).
-- Web UI: password login, HttpOnly session cookie (30 days, persisted
-  across server restarts).
-- Headless clients: `Authorization: Bearer sf_…` — the non-interactive
-  path for the upcoming upload API. Tokens are stored hashed and shown
-  exactly once; passwords are argon2id.
+- Roles are strict supersets: unauthenticated (nothing) < `ro`
+  (browse/search) < `rw` (store mutations) < `admin` (user management via
+  the web Admin page or the CLI).
+- Web UI sign-in paths: password (+ TOTP code if enrolled), or a WebAuthn
+  passkey (which skips TOTP). Sessions are HttpOnly cookies (30 days,
+  persisted across restarts; `Secure` when behind a TLS proxy).
+- The Account page self-serves password changes, TOTP enrollment (QR code
+  plus the `otpauth://` URL text for password managers; verification
+  accepts the previous/current/next 30 s step for clock drift), passkey
+  management, and API tokens with a read-only or read-write capability
+  (further capped by the user's role).
+- Headless clients: `Authorization: Bearer sf_…` — tokens are for the
+  symbol-store API only; they can never reach account/admin endpoints or
+  the web UI. Stored hashed, shown exactly once; passwords are argon2id.
+- WebAuthn needs a secure context: it works on `http://localhost` out of
+  the box; anywhere else set `--webauthn-origin https://…` and terminate
+  TLS at a reverse proxy.
+- Reverse proxy: run with `--trusted-proxies 1` behind nginx. Client IPs
+  for audit logs then come from `X-Forwarded-For` (never looking past the
+  trusted depth, so clients can't spoof), and `X-Forwarded-Proto: https`
+  marks cookies `Secure`. With the default of 0 those headers are ignored.
 - No TLS built in: front with a reverse proxy if it leaves localhost.
 
 ## Not yet implemented

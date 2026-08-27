@@ -1,7 +1,9 @@
 mod auth;
 mod cli;
 mod cli_auth;
+mod totp;
 mod web;
+mod web_account;
 
 use clap::{Parser, Subcommand};
 use symfront_core::TransactionId;
@@ -29,6 +31,16 @@ enum Command {
         /// `symfront user` / `symfront token`. Without this the server is open.
         #[arg(long, env = "SYMFRONT_AUTH_DB")]
         auth_db: Option<std::path::PathBuf>,
+        /// Public origin for WebAuthn/passkeys, e.g. https://syms.example.com.
+        /// Defaults to http://localhost:<port>. Browsers require a secure
+        /// context: localhost, or HTTPS via a reverse proxy.
+        #[arg(long, env = "SYMFRONT_WEBAUTHN_ORIGIN")]
+        webauthn_origin: Option<String>,
+        /// Number of trusted reverse-proxy hops. When > 0, the client IP for
+        /// audit logs is taken from X-Forwarded-For (capped at this depth)
+        /// and X-Forwarded-Proto: https marks session cookies Secure.
+        #[arg(long, default_value_t = 0, env = "SYMFRONT_TRUSTED_PROXIES")]
+        trusted_proxies: usize,
     },
     /// Quick store summary (admin records only; no tree walk).
     Status,
@@ -111,7 +123,12 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     match args.command {
-        Command::Serve { listen, auth_db } => web::serve(args.store, listen, auth_db),
+        Command::Serve {
+            listen,
+            auth_db,
+            webauthn_origin,
+            trusted_proxies,
+        } => web::serve(args.store, listen, auth_db, webauthn_origin, trusted_proxies),
         Command::Status => cli::status(&args.store),
         Command::Tx { command } => match command {
             TxCommand::List { all, sizes } => cli::tx_list(&args.store, all, sizes),

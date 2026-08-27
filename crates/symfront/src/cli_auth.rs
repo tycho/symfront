@@ -36,6 +36,9 @@ pub enum TokenCommand {
         /// Free-form note, e.g. "ci uploads".
         #[arg(long, default_value = "")]
         label: String,
+        /// Token capability (further capped by the user's role).
+        #[arg(long, value_enum, default_value_t = Role::Rw)]
+        cap: Role,
     },
     /// List tokens (hashes only; plaintext is never stored).
     List,
@@ -133,21 +136,22 @@ pub fn user(db_path: &Path, cmd: UserCommand) -> Result<()> {
 pub fn token(db_path: &Path, cmd: TokenCommand) -> Result<()> {
     let db = AuthDb::open(db_path)?;
     match cmd {
-        TokenCommand::Create { user, label } => {
-            let token = db.create_token(&user, &label)?;
+        TokenCommand::Create { user, label, cap } => {
+            let token = db.create_token(&user, &label, cap)?;
             println!("{token}");
             eprintln!("(shown once — store it now; use as `Authorization: Bearer <token>`)");
         }
         TokenCommand::List => {
-            let tokens = db.list_tokens()?;
+            let tokens = db.list_tokens(None)?;
             if tokens.is_empty() {
                 println!("no tokens");
             }
             for t in tokens {
                 println!(
-                    "{:<4} {:<20} created {}  last used {}  {}",
+                    "{:<4} {:<20} {:<4} created {}  last used {}  {}",
                     t.id,
                     t.user,
+                    t.cap.to_string(),
                     ts(t.created_at),
                     t.last_used_at.map(ts).unwrap_or_else(|| "never".into()),
                     t.label
@@ -155,7 +159,7 @@ pub fn token(db_path: &Path, cmd: TokenCommand) -> Result<()> {
             }
         }
         TokenCommand::Revoke { id } => {
-            db.revoke_token(id)?;
+            db.revoke_token(id, None)?;
             println!("revoked token {id}");
         }
     }

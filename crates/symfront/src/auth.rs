@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 
 pub const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, clap::ValueEnum, serde::Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     /// Read-only: browse, search, reports.
@@ -36,6 +36,22 @@ pub enum Role {
 impl Role {
     pub fn can_mutate(self) -> bool {
         !matches!(self, Role::Ro)
+    }
+    fn rank(self) -> u8 {
+        match self {
+            Role::Ro => 1,
+            Role::Rw => 2,
+            Role::Admin => 3,
+        }
+    }
+    /// The lesser of two roles — used to cap a token's capability by its
+    /// owner's role.
+    pub fn min(self, other: Role) -> Role {
+        if self.rank() <= other.rank() {
+            self
+        } else {
+            other
+        }
     }
     fn as_str(self) -> &'static str {
         match self {
@@ -67,17 +83,30 @@ pub struct User {
     pub role: Role,
 }
 
+#[derive(serde::Serialize)]
 pub struct UserInfo {
     pub name: String,
     pub role: Role,
     pub has_password: bool,
+    pub totp_enabled: bool,
+    pub passkeys: i64,
     pub tokens: i64,
 }
 
+#[derive(serde::Serialize)]
 pub struct TokenInfo {
     pub id: i64,
     pub user: String,
     pub label: String,
+    pub cap: Role,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(serde::Serialize)]
+pub struct PasskeyInfo {
+    pub id: i64,
+    pub name: String,
     pub created_at: i64,
     pub last_used_at: Option<i64>,
 }
@@ -133,11 +162,30 @@ impl AuthDb {
                token_hash TEXT NOT NULL UNIQUE,
                created_at INTEGER NOT NULL,
                expires_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS passkeys(
+               id INTEGER PRIMARY KEY,
+               user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+               name TEXT NOT NULL DEFAULT '',
+               cred TEXT NOT NULL,
+               created_at INTEGER NOT NULL,
+               last_used_at INTEGER
              );",
         )?;
+        // Additive migrations for databases created by earlier versions.
+        ensure_column(&conn, "users", "totp_secret", "TEXT")?;
+        ensure_column(&conn, "tokens", "cap", "TEXT NOT NULL DEFAULT 'rw'")?;
         Ok(AuthDb {
             conn: Mutex::new(conn),
         })
+    }
+
+    fn user_id(conn: &Connection, name: &str) -> Result<i64> {
+        conn.query_row("SELECT id FROM users WHERE name = ?1", params![name], |r| {
+            r.get(0)
+        })
+        .optional()?
+        .ok_or_else(|| anyhow!("no such user {name:?}"))
     }
 
     pub fn add_user(&self, name: &str, password: Option<&str>, role: Role) -> Result<()> {
@@ -191,7 +239,8 @@ impl AuthDb {
     pub fn list_users(&self) -> Result<Vec<UserInfo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT u.name, u.role, u.pass_hash IS NOT NULL,
+            "SELECT u.name, u.role, u.pass_hash IS NOT NULL, u.totp_secret IS NOT NULL,
+                    (SELECT COUNT(*) FROM passkeys p WHERE p.user_id = u.id),
                     (SELECT COUNT(*) FROM tokens t WHERE t.user_id = u.id)
              FROM users u ORDER BY u.name",
         )?;
@@ -200,20 +249,171 @@ impl AuthDb {
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, bool>(2)?,
-                r.get::<_, i64>(3)?,
+                r.get::<_, bool>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (name, role, has_password, tokens) = row?;
+            let (name, role, has_password, totp_enabled, passkeys, tokens) = row?;
             out.push(UserInfo {
                 name,
                 role: Role::parse(&role)?,
                 has_password,
+                totp_enabled,
+                passkeys,
                 tokens,
             });
         }
         Ok(out)
+    }
+
+    pub fn set_role(&self, name: &str, role: Role) -> Result<()> {
+        let n = self.conn.lock().unwrap().execute(
+            "UPDATE users SET role = ?1 WHERE name = ?2",
+            params![role.as_str(), name],
+        )?;
+        if n == 0 {
+            bail!("no such user {name:?}");
+        }
+        Ok(())
+    }
+
+    pub fn user_by_name(&self, name: &str) -> Result<Option<User>> {
+        let conn = self.conn.lock().unwrap();
+        Ok(conn
+            .query_row(
+                "SELECT id, role FROM users WHERE name = ?1",
+                params![name],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+            )
+            .optional()?
+            .and_then(|(id, role)| {
+                Some(User {
+                    id,
+                    name: name.to_string(),
+                    role: Role::parse(&role).ok()?,
+                })
+            }))
+    }
+
+    pub fn user_by_id(&self, id: i64) -> Result<Option<User>> {
+        let conn = self.conn.lock().unwrap();
+        Ok(conn
+            .query_row(
+                "SELECT name, role FROM users WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .optional()?
+            .and_then(|(name, role)| {
+                Some(User {
+                    id,
+                    name,
+                    role: Role::parse(&role).ok()?,
+                })
+            }))
+    }
+
+    /// Every stored passkey: (passkey row id, owning user id, credential JSON).
+    pub fn all_passkey_creds(&self) -> Result<Vec<(i64, i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, user_id, cred FROM passkeys ORDER BY id")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn has_password(&self, user_id: i64) -> Result<bool> {
+        Ok(self.conn.lock().unwrap().query_row(
+            "SELECT pass_hash IS NOT NULL FROM users WHERE id = ?1",
+            params![user_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    // ----- TOTP -----
+
+    pub fn totp_secret(&self, user_id: i64) -> Result<Option<String>> {
+        Ok(self.conn.lock().unwrap().query_row(
+            "SELECT totp_secret FROM users WHERE id = ?1",
+            params![user_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    pub fn set_totp_secret(&self, user_id: i64, secret: Option<&str>) -> Result<()> {
+        self.conn.lock().unwrap().execute(
+            "UPDATE users SET totp_secret = ?1 WHERE id = ?2",
+            params![secret, user_id],
+        )?;
+        Ok(())
+    }
+
+    /// Admin lockout recovery: clear TOTP and all passkeys for a user.
+    pub fn clear_second_factors(&self, name: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let id = Self::user_id(&conn, name)?;
+        conn.execute(
+            "UPDATE users SET totp_secret = NULL WHERE id = ?1",
+            params![id],
+        )?;
+        conn.execute("DELETE FROM passkeys WHERE user_id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ----- Passkeys (WebAuthn credentials, serialized JSON) -----
+
+    pub fn passkey_add(&self, user_id: i64, name: &str, cred_json: &str) -> Result<()> {
+        self.conn.lock().unwrap().execute(
+            "INSERT INTO passkeys(user_id, name, cred, created_at) VALUES(?1, ?2, ?3, ?4)",
+            params![user_id, name, cred_json, now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn passkeys_meta(&self, user_id: i64) -> Result<Vec<PasskeyInfo>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, created_at, last_used_at FROM passkeys
+             WHERE user_id = ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![user_id], |r| {
+            Ok(PasskeyInfo {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                created_at: r.get(2)?,
+                last_used_at: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn passkey_creds(&self, user_id: i64) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt =
+            conn.prepare("SELECT id, cred FROM passkeys WHERE user_id = ?1 ORDER BY id")?;
+        let rows = stmt.query_map(params![user_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn passkey_update_cred(&self, id: i64, cred_json: &str) -> Result<()> {
+        self.conn.lock().unwrap().execute(
+            "UPDATE passkeys SET cred = ?1, last_used_at = ?2 WHERE id = ?3",
+            params![cred_json, now(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn passkey_delete(&self, user_id: i64, id: i64) -> Result<()> {
+        let n = self.conn.lock().unwrap().execute(
+            "DELETE FROM passkeys WHERE id = ?1 AND user_id = ?2",
+            params![id, user_id],
+        )?;
+        if n == 0 {
+            bail!("no such passkey");
+        }
+        Ok(())
     }
 
     pub fn verify_password(&self, name: &str, password: &str) -> Result<Option<User>> {
@@ -245,48 +445,57 @@ impl AuthDb {
     }
 
     /// Create an API token for a user; returns the plaintext (shown once).
-    pub fn create_token(&self, user: &str, label: &str) -> Result<String> {
+    /// `cap` limits what the token may do, further capped by the user's role.
+    pub fn create_token(&self, user: &str, label: &str, cap: Role) -> Result<String> {
         let token = format!("sf_{}", random_hex(32));
         let conn = self.conn.lock().unwrap();
-        let user_id: Option<i64> = conn
-            .query_row("SELECT id FROM users WHERE name = ?1", params![user], |r| {
-                r.get(0)
-            })
-            .optional()?;
-        let Some(user_id) = user_id else {
-            bail!("no such user {user:?}");
-        };
+        let user_id = Self::user_id(&conn, user)?;
         conn.execute(
-            "INSERT INTO tokens(user_id, label, token_hash, created_at) VALUES(?1, ?2, ?3, ?4)",
-            params![user_id, label, sha256_hex(&token), now()],
+            "INSERT INTO tokens(user_id, label, token_hash, cap, created_at) VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![user_id, label, sha256_hex(&token), cap.as_str(), now()],
         )?;
         Ok(token)
     }
 
-    pub fn list_tokens(&self) -> Result<Vec<TokenInfo>> {
+    pub fn list_tokens(&self, user_id: Option<i64>) -> Result<Vec<TokenInfo>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT t.id, u.name, t.label, t.created_at, t.last_used_at
-             FROM tokens t JOIN users u ON u.id = t.user_id ORDER BY t.id",
+            "SELECT t.id, u.name, t.label, t.cap, t.created_at, t.last_used_at
+             FROM tokens t JOIN users u ON u.id = t.user_id
+             WHERE ?1 IS NULL OR t.user_id = ?1
+             ORDER BY t.id",
         )?;
-        let rows = stmt.query_map([], |r| {
-            Ok(TokenInfo {
-                id: r.get(0)?,
-                user: r.get(1)?,
-                label: r.get(2)?,
-                created_at: r.get(3)?,
-                last_used_at: r.get(4)?,
-            })
+        let rows = stmt.query_map(params![user_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, Option<i64>>(5)?,
+            ))
         })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, user, label, cap, created_at, last_used_at) = row?;
+            out.push(TokenInfo {
+                id,
+                user,
+                label,
+                cap: Role::parse(&cap)?,
+                created_at,
+                last_used_at,
+            });
+        }
+        Ok(out)
     }
 
-    pub fn revoke_token(&self, id: i64) -> Result<()> {
-        let n = self
-            .conn
-            .lock()
-            .unwrap()
-            .execute("DELETE FROM tokens WHERE id = ?1", params![id])?;
+    /// Revoke a token; when `owner` is given the token must belong to them.
+    pub fn revoke_token(&self, id: i64, owner: Option<i64>) -> Result<()> {
+        let n = self.conn.lock().unwrap().execute(
+            "DELETE FROM tokens WHERE id = ?1 AND (?2 IS NULL OR user_id = ?2)",
+            params![id, owner],
+        )?;
         if n == 0 {
             bail!("no such token id {id}");
         }
@@ -297,13 +506,13 @@ impl AuthDb {
     pub fn auth_token(&self, token: &str) -> Option<User> {
         let hash = sha256_hex(token);
         let conn = self.conn.lock().unwrap();
-        let (token_id, id, name, role): (i64, i64, String, String) = conn
+        let (token_id, id, name, role, cap): (i64, i64, String, String, String) = conn
             .query_row(
-                "SELECT t.id, u.id, u.name, u.role
+                "SELECT t.id, u.id, u.name, u.role, t.cap
                  FROM tokens t JOIN users u ON u.id = t.user_id
                  WHERE t.token_hash = ?1",
                 params![hash],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .optional()
             .ok()??;
@@ -311,10 +520,11 @@ impl AuthDb {
             "UPDATE tokens SET last_used_at = ?1 WHERE id = ?2",
             params![now(), token_id],
         );
+        // Effective role: token capability capped by the owner's role.
         Some(User {
             id,
             name,
-            role: Role::parse(&role).ok()?,
+            role: Role::parse(&role).ok()?.min(Role::parse(&cap).ok()?),
         })
     }
 
@@ -362,6 +572,21 @@ impl AuthDb {
             params![sha256_hex(token)],
         );
     }
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let exists = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .any(|c| c == column);
+    if !exists {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {ddl}"),
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn hash_password(password: &str) -> Result<String> {
@@ -412,14 +637,14 @@ mod tests {
     fn token_roundtrip() {
         let (_t, db) = db();
         db.add_user("bot", None, Role::Rw).unwrap();
-        let token = db.create_token("bot", "ci uploads").unwrap();
+        let token = db.create_token("bot", "ci uploads", Role::Rw).unwrap();
         assert!(token.starts_with("sf_"));
         let u = db.auth_token(&token).unwrap();
         assert_eq!(u.name, "bot");
         assert_eq!(u.role, Role::Rw);
         assert!(db.auth_token("sf_bogus").is_none());
-        let id = db.list_tokens().unwrap()[0].id;
-        db.revoke_token(id).unwrap();
+        let id = db.list_tokens(None).unwrap()[0].id;
+        db.revoke_token(id, None).unwrap();
         assert!(db.auth_token(&token).is_none());
     }
 
@@ -435,10 +660,22 @@ mod tests {
     }
 
     #[test]
+    fn token_capability_is_capped() {
+        let (_t, db) = db();
+        db.add_user("bot", None, Role::Rw).unwrap();
+        db.add_user("viewer", None, Role::Ro).unwrap();
+        let ro_tok = db.create_token("bot", "", Role::Ro).unwrap();
+        assert_eq!(db.auth_token(&ro_tok).unwrap().role, Role::Ro);
+        // A viewer's rw token is still capped at ro by their role.
+        let esc_tok = db.create_token("viewer", "", Role::Rw).unwrap();
+        assert_eq!(db.auth_token(&esc_tok).unwrap().role, Role::Ro);
+    }
+
+    #[test]
     fn user_removal_cascades() {
         let (_t, db) = db();
         db.add_user("bot", None, Role::Rw).unwrap();
-        let token = db.create_token("bot", "").unwrap();
+        let token = db.create_token("bot", "", Role::Rw).unwrap();
         db.remove_user("bot").unwrap();
         assert!(db.auth_token(&token).is_none());
     }

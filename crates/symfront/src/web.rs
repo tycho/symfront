@@ -28,7 +28,8 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_stream::StreamExt;
 
-use crate::auth::{AuthDb, User, SESSION_TTL};
+use crate::auth::{AuthDb, Role, User};
+use crate::web_account;
 
 use symfront_core::check::{self, Finding};
 use symfront_core::index::StoreIndex;
@@ -94,8 +95,45 @@ impl Job {
     }
 }
 
-struct AppState {
-    store: Store,
+/// A login awaiting its second step (TOTP code or WebAuthn assertion).
+pub(crate) enum PendingLogin {
+    Totp {
+        user_id: i64,
+        created: Instant,
+    },
+    WebAuthn {
+        state: webauthn_rs::prelude::PasskeyAuthentication,
+        created: Instant,
+    },
+}
+
+/// An in-flight passkey registration ceremony for a logged-in user.
+pub(crate) struct PendingReg {
+    pub user_id: i64,
+    pub state: webauthn_rs::prelude::PasskeyRegistration,
+    pub created: Instant,
+}
+
+pub(crate) struct AuthState {
+    pub db: Arc<AuthDb>,
+    /// None when no usable origin could be configured.
+    pub webauthn: Option<webauthn_rs::Webauthn>,
+    pub pending_logins: Mutex<HashMap<String, PendingLogin>>,
+    pub pending_regs: Mutex<HashMap<String, PendingReg>>,
+}
+
+/// Who is making this request, resolved by the auth middleware.
+#[derive(Clone)]
+pub(crate) struct AuthCtx {
+    pub user: User,
+    /// True for cookie sessions (web UI); false for Bearer API tokens.
+    /// Account and admin endpoints require a session — API tokens are for
+    /// the symbol-store API only.
+    pub via_session: bool,
+}
+
+pub(crate) struct AppState {
+    pub(crate) store: Store,
     index: RwLock<Arc<StoreIndex>>,
     scan: Mutex<ScanSlot>,
     jobs: Mutex<Vec<Arc<Job>>>,
@@ -109,12 +147,14 @@ struct AppState {
     /// watcher skip changes we already reacted to.
     last_self_mutation: Mutex<Option<Instant>>,
     /// Present when `--auth-db` was given; None means the server is open.
-    auth: Option<Arc<AuthDb>>,
+    pub(crate) auth: Option<Arc<AuthState>>,
+    /// Trusted reverse-proxy hop count for X-Forwarded-For / -Proto.
+    pub(crate) trusted_proxies: usize,
 }
 
-type App = Arc<AppState>;
+pub(crate) type App = Arc<AppState>;
 
-struct ApiError(StatusCode, String);
+pub(crate) struct ApiError(pub StatusCode, pub String);
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -289,25 +329,68 @@ fn spawn_admin_watcher(state: App) -> anyhow::Result<notify::RecommendedWatcher>
     Ok(watcher)
 }
 
+/// The requester's IP for audit logs, resolved by the middleware.
+#[derive(Clone)]
+pub(crate) struct ClientIp(pub String);
+
+/// Whether the (trusted) reverse proxy says the outer connection is TLS —
+/// controls the session cookie's `Secure` flag.
+pub(crate) fn forwarded_https(state: &AppState, headers: &HeaderMap) -> bool {
+    state.trusted_proxies > 0
+        && headers
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.trim().eq_ignore_ascii_case("https"))
+            .unwrap_or(false)
+}
+
+/// Real client IP. With N trusted proxy hops, the rightmost N entries of
+/// X-Forwarded-For were appended by proxies we control; the client is the
+/// entry just inside that suffix. Anything further left is client-supplied
+/// and untrusted, so we never look past the cap. With no trusted proxies the
+/// header is ignored entirely and the TCP peer address is used.
+fn resolve_client_ip(state: &AppState, peer: Option<SocketAddr>, headers: &HeaderMap) -> String {
+    if state.trusted_proxies > 0 {
+        if let Some(xff) = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+        {
+            let entries: Vec<&str> = xff.split(',').map(|s| s.trim()).collect();
+            if !entries.is_empty() {
+                let idx = entries.len().saturating_sub(state.trusted_proxies);
+                return entries[idx].to_string();
+            }
+        }
+    }
+    peer.map(|p| p.ip().to_string())
+        .unwrap_or_else(|| "unknown".into())
+}
+
 /// Resolve the requesting user from `Authorization: Bearer` (API tokens) or
 /// the session cookie (web UI). None when unauthenticated.
-fn request_user(state: &AppState, headers: &HeaderMap) -> Option<User> {
+fn request_user(state: &AppState, headers: &HeaderMap) -> Option<AuthCtx> {
     let auth = state.auth.as_ref()?;
     if let Some(v) = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
     {
         if let Some(token) = v.strip_prefix("Bearer ") {
-            if let Some(u) = auth.auth_token(token.trim()) {
-                return Some(u);
+            if let Some(user) = auth.db.auth_token(token.trim()) {
+                return Some(AuthCtx {
+                    user,
+                    via_session: false,
+                });
             }
         }
     }
     if let Some(cookies) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
         for c in cookies.split(';') {
             if let Some(v) = c.trim().strip_prefix("symfront_session=") {
-                if let Some(u) = auth.auth_session(v) {
-                    return Some(u);
+                if let Some(user) = auth.db.auth_session(v) {
+                    return Some(AuthCtx {
+                        user,
+                        via_session: true,
+                    });
                 }
             }
         }
@@ -315,31 +398,62 @@ fn request_user(state: &AppState, headers: &HeaderMap) -> Option<User> {
     None
 }
 
-async fn auth_middleware(State(state): State<App>, req: Request, next: Next) -> Response {
+async fn auth_middleware(State(state): State<App>, mut req: Request, next: Next) -> Response {
+    let peer = req
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+        .map(|c| c.0);
+    let ip = resolve_client_ip(&state, peer, req.headers());
+    req.extensions_mut().insert(ClientIp(ip.clone()));
     if state.auth.is_none() {
         return next.run(req).await;
     }
     let path = req.uri().path().to_string();
-    // The SPA shell, login, and "who am I" are reachable unauthenticated.
-    if path == "/" || path == "/api/login" || path == "/api/me" {
+    // The SPA shell, the login flows, and "who am I" are reachable
+    // unauthenticated.
+    if path == "/"
+        || path == "/api/me"
+        || path == "/api/login"
+        || path.starts_with("/api/login/")
+    {
         return next.run(req).await;
     }
-    let Some(user) = request_user(&state, req.headers()) else {
+    let Some(ctx) = request_user(&state, req.headers()) else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": "authentication required" })),
         )
             .into_response();
     };
-    let mutating = req.method() == Method::DELETE
-        || (req.method() == Method::POST && path != "/api/logout");
-    if mutating && !user.role.can_mutate() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({ "error": format!("role '{}' is read-only", user.role) })),
-        )
-            .into_response();
+    // Account and admin management require a web session: API tokens are
+    // scoped to the symbol-store API and grant no account access.
+    if path.starts_with("/api/account") || path.starts_with("/api/admin") {
+        if !ctx.via_session {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "API tokens cannot manage accounts; sign in to the web UI" })),
+            )
+                .into_response();
+        }
+        if path.starts_with("/api/admin") && ctx.user.role != Role::Admin {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "admin role required" })),
+            )
+                .into_response();
+        }
+    } else {
+        let mutating = req.method() == Method::DELETE
+            || (req.method() == Method::POST && path != "/api/logout");
+        if mutating && !ctx.user.role.can_mutate() {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": format!("role '{}' is read-only", ctx.user.role) })),
+            )
+                .into_response();
+        }
     }
+    req.extensions_mut().insert(ctx);
     next.run(req).await
 }
 
@@ -351,6 +465,8 @@ struct LoginRequest {
 
 async fn login(
     State(state): State<App>,
+    axum::Extension(ClientIp(ip)): axum::Extension<ClientIp>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> ApiResult<Response> {
     let Some(auth) = &state.auth else {
@@ -359,30 +475,41 @@ async fn login(
             "authentication is not enabled".into(),
         ));
     };
-    let auth = Arc::clone(auth);
+    let db = Arc::clone(&auth.db);
+    let username = req.username.clone();
     // argon2 verification is deliberately slow; keep it off the async threads.
     let user = tokio::task::spawn_blocking(move || {
-        auth.verify_password(&req.username, &req.password)
+        db.verify_password(&username, &req.password)
     })
     .await
     .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
     let Some(user) = user else {
+        tracing::warn!("failed login for {:?} from {ip}", req.username);
         return Err(ApiError(
             StatusCode::UNAUTHORIZED,
             "invalid username or password".into(),
         ));
     };
-    let session = state.auth.as_ref().unwrap().create_session(user.id)?;
-    let cookie = format!(
-        "symfront_session={session}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-        SESSION_TTL.as_secs()
-    );
-    tracing::info!("user {} logged in", user.name);
-    Ok((
-        [(header::SET_COOKIE, cookie)],
-        Json(json!({ "user": user.name, "role": user.role })),
-    )
-        .into_response())
+    // Password OK. If the user enrolled TOTP, demand the code before a
+    // session exists.
+    if auth.db.totp_secret(user.id)?.is_some() {
+        let login_token = {
+            use rand_core::{OsRng, RngCore};
+            let mut buf = [0u8; 24];
+            OsRng.fill_bytes(&mut buf);
+            buf.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        };
+        auth.pending_logins.lock().unwrap().insert(
+            login_token.clone(),
+            PendingLogin::Totp {
+                user_id: user.id,
+                created: Instant::now(),
+            },
+        );
+        return Ok(Json(json!({ "totp_required": true, "login_token": login_token }))
+            .into_response());
+    }
+    web_account::issue_session(auth, &user, forwarded_https(&state, &headers), &ip)
 }
 
 async fn logout(State(state): State<App>, headers: HeaderMap) -> Response {
@@ -392,14 +519,14 @@ async fn logout(State(state): State<App>, headers: HeaderMap) -> Response {
     ) {
         for c in cookies.split(';') {
             if let Some(v) = c.trim().strip_prefix("symfront_session=") {
-                auth.delete_session(v);
+                auth.db.delete_session(v);
             }
         }
     }
     (
         [(
             header::SET_COOKIE,
-            "symfront_session=; Path=/; HttpOnly; Max-Age=0".to_string(),
+            web_account::session_cookie("", 0, false),
         )],
         Json(json!({ "ok": true })),
     )
@@ -409,10 +536,14 @@ async fn logout(State(state): State<App>, headers: HeaderMap) -> Response {
 async fn me(State(state): State<App>, headers: HeaderMap) -> Json<serde_json::Value> {
     match &state.auth {
         None => Json(json!({ "auth_enabled": false, "user": null })),
-        Some(_) => {
+        Some(auth) => {
             let user = request_user(&state, &headers)
-                .map(|u| json!({ "name": u.name, "role": u.role }));
-            Json(json!({ "auth_enabled": true, "user": user }))
+                .map(|c| json!({ "name": c.user.name, "role": c.user.role }));
+            Json(json!({
+                "auth_enabled": true,
+                "user": user,
+                "webauthn_available": auth.webauthn.is_some(),
+            }))
         }
     }
 }
@@ -422,6 +553,8 @@ pub async fn serve(
     store_path: PathBuf,
     listen: String,
     auth_db: Option<PathBuf>,
+    webauthn_origin: Option<String>,
+    trusted_proxies: usize,
 ) -> anyhow::Result<()> {
     let auth = match &auth_db {
         Some(path) => {
@@ -432,11 +565,48 @@ pub async fn serve(
                     path.display()
                 );
             }
+            // Passkeys only work in secure contexts: localhost over http, or
+            // anything behind an https-terminating proxy with a matching
+            // --webauthn-origin.
+            let origin_str = webauthn_origin.clone().unwrap_or_else(|| {
+                let port = listen.rsplit(':').next().unwrap_or("8710");
+                format!("http://localhost:{port}")
+            });
+            let webauthn = (|| -> anyhow::Result<webauthn_rs::Webauthn> {
+                let origin = webauthn_rs::prelude::Url::parse(&origin_str)?;
+                let rp_id = origin
+                    .host_str()
+                    .ok_or_else(|| anyhow::anyhow!("origin has no host"))?
+                    .to_string();
+                Ok(webauthn_rs::WebauthnBuilder::new(&rp_id, &origin)?
+                    .rp_name("symfront")
+                    .build()?)
+            })();
+            let webauthn = match webauthn {
+                Ok(w) => {
+                    tracing::info!("webauthn enabled for origin {origin_str}");
+                    Some(w)
+                }
+                Err(e) => {
+                    tracing::warn!("webauthn disabled: {e} (origin {origin_str})");
+                    None
+                }
+            };
             tracing::info!("authentication enabled ({})", path.display());
-            Some(Arc::new(db))
+            Some(Arc::new(AuthState {
+                db: Arc::new(db),
+                webauthn,
+                pending_logins: Mutex::new(HashMap::new()),
+                pending_regs: Mutex::new(HashMap::new()),
+            }))
         }
         None => None,
     };
+    if trusted_proxies > 0 {
+        tracing::info!(
+            "trusting {trusted_proxies} reverse-proxy hop(s) for X-Forwarded-For / X-Forwarded-Proto"
+        );
+    }
     let store = Store::open(&store_path)?;
     tracing::info!("loading index for {}", store.root().display());
     let index = Arc::new(StoreIndex::load(&store)?);
@@ -455,6 +625,7 @@ pub async fn serve(
         shutdown: AtomicBool::new(false),
         last_self_mutation: Mutex::new(None),
         auth,
+        trusted_proxies,
     });
     spawn_scan(Arc::clone(&state));
     // Keep the watcher alive for the whole server lifetime.
@@ -479,8 +650,29 @@ pub async fn serve(
         .route("/api/check", get(check_endpoint))
         .route("/api/scan", post(rescan))
         .route("/api/login", post(login))
+        .route("/api/login/totp", post(web_account::login_totp))
+        .route("/api/login/webauthn/start", post(web_account::login_webauthn_start))
+        .route("/api/login/webauthn/finish", post(web_account::login_webauthn_finish))
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
+        .route("/api/account", get(web_account::account_overview))
+        .route("/api/account/password", post(web_account::change_password))
+        .route("/api/account/tokens", get(web_account::my_tokens))
+        .route("/api/account/tokens", post(web_account::create_my_token))
+        .route("/api/account/tokens/{id}", delete(web_account::revoke_my_token))
+        .route("/api/account/totp/setup", post(web_account::totp_setup))
+        .route("/api/account/totp/enable", post(web_account::totp_enable))
+        .route("/api/account/totp/disable", post(web_account::totp_disable))
+        .route("/api/account/passkeys", get(web_account::my_passkeys))
+        .route("/api/account/passkeys/register/start", post(web_account::passkey_register_start))
+        .route("/api/account/passkeys/register/finish", post(web_account::passkey_register_finish))
+        .route("/api/account/passkeys/{id}", delete(web_account::passkey_delete))
+        .route("/api/admin/users", get(web_account::admin_users))
+        .route("/api/admin/users", post(web_account::admin_add_user))
+        .route("/api/admin/users/{name}", delete(web_account::admin_delete_user))
+        .route("/api/admin/users/{name}/role", post(web_account::admin_set_role))
+        .route("/api/admin/users/{name}/password", post(web_account::admin_set_password))
+        .route("/api/admin/users/{name}/reset-2fa", post(web_account::admin_reset_2fa))
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
             auth_middleware,
@@ -491,7 +683,10 @@ pub async fn serve(
     tracing::info!("listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let shutdown_state = Arc::clone(&state);
-    axum::serve(listener, app)
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
         .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
             tracing::info!("shutting down (Ctrl-C again to force)");
@@ -747,8 +942,17 @@ async fn tx_delete(
     State(state): State<App>,
     AxPath(id): AxPath<u32>,
     Query(params): Query<DeleteParams>,
+    axum::Extension(ClientIp(ip)): axum::Extension<ClientIp>,
+    ctx: Option<axum::Extension<AuthCtx>>,
 ) -> ApiResult<Response> {
     let id = TransactionId(id);
+    if !params.dry_run {
+        let who = ctx
+            .as_ref()
+            .map(|c| c.user.name.as_str())
+            .unwrap_or("<open server>");
+        tracing::info!("delete of transaction {id} requested by {who} from {ip}");
+    }
     if params.dry_run {
         // Dry runs are read-only and fast: run them synchronously.
         let store = state.store.clone();
@@ -833,8 +1037,17 @@ struct PruneRequest {
 
 async fn prune(
     State(state): State<App>,
+    axum::Extension(ClientIp(ip)): axum::Extension<ClientIp>,
+    ctx: Option<axum::Extension<AuthCtx>>,
     Json(req): Json<PruneRequest>,
 ) -> ApiResult<Response> {
+    if !req.dry_run {
+        let who = ctx
+            .as_ref()
+            .map(|c| c.user.name.as_str())
+            .unwrap_or("<open server>");
+        tracing::info!("stray prune requested by {who} from {ip}");
+    }
     let paths = if req.all {
         let slot = state.scan.lock().unwrap();
         match &slot.result {
