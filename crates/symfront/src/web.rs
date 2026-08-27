@@ -17,8 +17,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 
-use axum::extract::{Path as AxPath, Query, State};
-use axum::http::StatusCode;
+use axum::extract::{Path as AxPath, Query, Request, State};
+use axum::http::{header, HeaderMap, Method, StatusCode};
+use axum::middleware::Next;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -26,6 +27,8 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
 use tokio_stream::StreamExt;
+
+use crate::auth::{AuthDb, User, SESSION_TTL};
 
 use symfront_core::check::{self, Finding};
 use symfront_core::index::StoreIndex;
@@ -105,6 +108,8 @@ struct AppState {
     /// When we last mutated 000Admin ourselves — lets the external-change
     /// watcher skip changes we already reacted to.
     last_self_mutation: Mutex<Option<Instant>>,
+    /// Present when `--auth-db` was given; None means the server is open.
+    auth: Option<Arc<AuthDb>>,
 }
 
 type App = Arc<AppState>;
@@ -284,8 +289,154 @@ fn spawn_admin_watcher(state: App) -> anyhow::Result<notify::RecommendedWatcher>
     Ok(watcher)
 }
 
+/// Resolve the requesting user from `Authorization: Bearer` (API tokens) or
+/// the session cookie (web UI). None when unauthenticated.
+fn request_user(state: &AppState, headers: &HeaderMap) -> Option<User> {
+    let auth = state.auth.as_ref()?;
+    if let Some(v) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        if let Some(token) = v.strip_prefix("Bearer ") {
+            if let Some(u) = auth.auth_token(token.trim()) {
+                return Some(u);
+            }
+        }
+    }
+    if let Some(cookies) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
+        for c in cookies.split(';') {
+            if let Some(v) = c.trim().strip_prefix("symfront_session=") {
+                if let Some(u) = auth.auth_session(v) {
+                    return Some(u);
+                }
+            }
+        }
+    }
+    None
+}
+
+async fn auth_middleware(State(state): State<App>, req: Request, next: Next) -> Response {
+    if state.auth.is_none() {
+        return next.run(req).await;
+    }
+    let path = req.uri().path().to_string();
+    // The SPA shell, login, and "who am I" are reachable unauthenticated.
+    if path == "/" || path == "/api/login" || path == "/api/me" {
+        return next.run(req).await;
+    }
+    let Some(user) = request_user(&state, req.headers()) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "authentication required" })),
+        )
+            .into_response();
+    };
+    let mutating = req.method() == Method::DELETE
+        || (req.method() == Method::POST && path != "/api/logout");
+    if mutating && !user.role.can_mutate() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": format!("role '{}' is read-only", user.role) })),
+        )
+            .into_response();
+    }
+    next.run(req).await
+}
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+}
+
+async fn login(
+    State(state): State<App>,
+    Json(req): Json<LoginRequest>,
+) -> ApiResult<Response> {
+    let Some(auth) = &state.auth else {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "authentication is not enabled".into(),
+        ));
+    };
+    let auth = Arc::clone(auth);
+    // argon2 verification is deliberately slow; keep it off the async threads.
+    let user = tokio::task::spawn_blocking(move || {
+        auth.verify_password(&req.username, &req.password)
+    })
+    .await
+    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+    let Some(user) = user else {
+        return Err(ApiError(
+            StatusCode::UNAUTHORIZED,
+            "invalid username or password".into(),
+        ));
+    };
+    let session = state.auth.as_ref().unwrap().create_session(user.id)?;
+    let cookie = format!(
+        "symfront_session={session}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+        SESSION_TTL.as_secs()
+    );
+    tracing::info!("user {} logged in", user.name);
+    Ok((
+        [(header::SET_COOKIE, cookie)],
+        Json(json!({ "user": user.name, "role": user.role })),
+    )
+        .into_response())
+}
+
+async fn logout(State(state): State<App>, headers: HeaderMap) -> Response {
+    if let (Some(auth), Some(cookies)) = (
+        &state.auth,
+        headers.get(header::COOKIE).and_then(|v| v.to_str().ok()),
+    ) {
+        for c in cookies.split(';') {
+            if let Some(v) = c.trim().strip_prefix("symfront_session=") {
+                auth.delete_session(v);
+            }
+        }
+    }
+    (
+        [(
+            header::SET_COOKIE,
+            "symfront_session=; Path=/; HttpOnly; Max-Age=0".to_string(),
+        )],
+        Json(json!({ "ok": true })),
+    )
+        .into_response()
+}
+
+async fn me(State(state): State<App>, headers: HeaderMap) -> Json<serde_json::Value> {
+    match &state.auth {
+        None => Json(json!({ "auth_enabled": false, "user": null })),
+        Some(_) => {
+            let user = request_user(&state, &headers)
+                .map(|u| json!({ "name": u.name, "role": u.role }));
+            Json(json!({ "auth_enabled": true, "user": user }))
+        }
+    }
+}
+
 #[tokio::main]
-pub async fn serve(store_path: PathBuf, listen: String) -> anyhow::Result<()> {
+pub async fn serve(
+    store_path: PathBuf,
+    listen: String,
+    auth_db: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    let auth = match &auth_db {
+        Some(path) => {
+            let db = AuthDb::open(path)?;
+            if db.list_users()?.is_empty() {
+                tracing::warn!(
+                    "auth enabled but {} has no users — nobody can log in; create one with `symfront user add`",
+                    path.display()
+                );
+            }
+            tracing::info!("authentication enabled ({})", path.display());
+            Some(Arc::new(db))
+        }
+        None => None,
+    };
     let store = Store::open(&store_path)?;
     tracing::info!("loading index for {}", store.root().display());
     let index = Arc::new(StoreIndex::load(&store)?);
@@ -303,6 +454,7 @@ pub async fn serve(store_path: PathBuf, listen: String) -> anyhow::Result<()> {
         generation: AtomicU64::new(1),
         shutdown: AtomicBool::new(false),
         last_self_mutation: Mutex::new(None),
+        auth,
     });
     spawn_scan(Arc::clone(&state));
     // Keep the watcher alive for the whole server lifetime.
@@ -326,6 +478,13 @@ pub async fn serve(store_path: PathBuf, listen: String) -> anyhow::Result<()> {
         .route("/api/strays/prune", post(prune))
         .route("/api/check", get(check_endpoint))
         .route("/api/scan", post(rescan))
+        .route("/api/login", post(login))
+        .route("/api/logout", post(logout))
+        .route("/api/me", get(me))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&state),
+            auth_middleware,
+        ))
         .with_state(Arc::clone(&state));
 
     let addr: SocketAddr = listen.parse()?;

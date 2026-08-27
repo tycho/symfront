@@ -1,4 +1,6 @@
+mod auth;
 mod cli;
+mod cli_auth;
 mod web;
 
 use clap::{Parser, Subcommand};
@@ -23,6 +25,10 @@ enum Command {
         /// Address to listen on.
         #[arg(long, default_value = "127.0.0.1:8710")]
         listen: String,
+        /// SQLite auth database; enables authentication. Manage users with
+        /// `symfront user` / `symfront token`. Without this the server is open.
+        #[arg(long, env = "SYMFRONT_AUTH_DB")]
+        auth_db: Option<std::path::PathBuf>,
     },
     /// Quick store summary (admin records only; no tree walk).
     Status,
@@ -51,6 +57,22 @@ enum Command {
         /// Also read every refs.ptr and cross-check against the manifests.
         #[arg(long)]
         deep: bool,
+    },
+    /// Manage users in the auth database.
+    User {
+        /// SQLite auth database (created on first use).
+        #[arg(long, env = "SYMFRONT_AUTH_DB")]
+        auth_db: std::path::PathBuf,
+        #[command(subcommand)]
+        command: cli_auth::UserCommand,
+    },
+    /// Manage API tokens in the auth database.
+    Token {
+        /// SQLite auth database (created on first use).
+        #[arg(long, env = "SYMFRONT_AUTH_DB")]
+        auth_db: std::path::PathBuf,
+        #[command(subcommand)]
+        command: cli_auth::TokenCommand,
     },
 }
 
@@ -89,7 +111,7 @@ fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     match args.command {
-        Command::Serve { listen } => web::serve(args.store, listen),
+        Command::Serve { listen, auth_db } => web::serve(args.store, listen, auth_db),
         Command::Status => cli::status(&args.store),
         Command::Tx { command } => match command {
             TxCommand::List { all, sizes } => cli::tx_list(&args.store, all, sizes),
@@ -99,5 +121,7 @@ fn main() -> anyhow::Result<()> {
         Command::Search { query, limit } => cli::search(&args.store, &query, limit),
         Command::Strays { prune, dry_run } => cli::strays(&args.store, prune, dry_run),
         Command::Check { deep } => cli::check(&args.store, deep),
+        Command::User { auth_db, command } => cli_auth::user(&auth_db, command),
+        Command::Token { auth_db, command } => cli_auth::token(&auth_db, command),
     }
 }

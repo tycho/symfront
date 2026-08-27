@@ -66,6 +66,30 @@ The web API mirrors the CLI: `GET /api/summary`, `/api/transactions[/{id}]`,
   connected pages over SSE (`/api/events`), and Ctrl-C waits for running
   jobs to finish (press it twice to force).
 
+## Authentication (optional)
+
+Without `--auth-db` the server is open (bind it to localhost or a trusted
+network). With `--auth-db <path>` (or `SYMFRONT_AUTH_DB`), a small SQLite
+database provides users, web sessions, and API tokens:
+
+```console
+$ export SYMFRONT_AUTH_DB=~/.local/share/symfront/auth.db
+$ symfront user add steven --role admin        # prompts for password
+$ symfront user add ci-bot --role rw --no-password   # token-only headless user
+$ symfront user add viewer --role ro
+$ symfront token create ci-bot --label "ci uploads"  # prints sf_… once
+$ symfront serve
+```
+
+- Roles: `ro` (browse/search only), `rw` (mutations too), `admin`
+  (reserved for future API-side user management; CLI manages users today).
+- Web UI: password login, HttpOnly session cookie (30 days, persisted
+  across server restarts).
+- Headless clients: `Authorization: Bearer sf_…` — the non-interactive
+  path for the upcoming upload API. Tokens are stored hashed and shown
+  exactly once; passwords are argon2id.
+- No TLS built in: front with a reverse proxy if it leaves localhost.
+
 ## Not yet implemented
 
 - `symfront add`: transactional add (recursive discovery of exe/dll/sys/pdb,

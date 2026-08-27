@@ -91,6 +91,16 @@
   .job .jt button { background: none; border: none; color: var(--muted); cursor: pointer; }
   .job .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
   .job .bar div { height: 100%; background: var(--accent); }
+  #login { position: fixed; inset: 0; background: rgba(10, 13, 16, .88); z-index: 50;
+           display: flex; align-items: center; justify-content: center; }
+  #login form { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+                padding: 28px 32px; width: 320px; display: flex; flex-direction: column; gap: 10px; }
+  #login h2 { margin: 0 0 6px; font-size: 18px; }
+  #login input { width: 100%; }
+  #login .err { color: var(--err); font-size: 13px; min-height: 18px; }
+  .userchip { font-size: 12px; color: var(--muted); }
+  .userchip button { background: none; border: none; color: var(--accent); cursor: pointer;
+                     font-size: 12px; padding: 0 0 0 6px; }
 </style>
 </head>
 <body>
@@ -98,6 +108,7 @@
   <h1><a href="#overview">symfront</a></h1>
   <span class="store" id="storePath"></span>
   <span class="scan" id="scanStatus"></span>
+  <span class="userchip" id="userChip"></span>
 </header>
 <nav id="nav">
   <a href="#overview" data-tab="overview">Overview</a>
@@ -148,6 +159,15 @@
 </main>
 <aside id="detail"></aside>
 <div id="jobs"></div>
+<div id="login" hidden>
+  <form id="loginForm">
+    <h2>symfront</h2>
+    <input type="text" id="loginUser" placeholder="username" autocomplete="username" autofocus>
+    <input type="password" id="loginPass" placeholder="password" autocomplete="current-password">
+    <div class="err" id="loginErr"></div>
+    <button class="btn" type="submit">Sign in</button>
+  </form>
+</div>
 
 <script>
 const $ = (s, el) => (el || document).querySelector(s);
@@ -163,8 +183,36 @@ const num = n => (n == null) ? '—' : Number(n).toLocaleString();
 async function api(path, opts) {
   const r = await fetch(path, opts);
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = new Error(body.error || r.statusText); e.status = r.status; throw e; }
+  if (!r.ok) {
+    if (r.status === 401 && me?.auth_enabled) showLogin();
+    const e = new Error(body.error || r.statusText); e.status = r.status; throw e;
+  }
   return body;
+}
+
+/* ---------- authentication ---------- */
+let me = null;
+const canMutate = () => !me?.auth_enabled || (me.user && me.user.role !== 'ro');
+function showLogin() { $('#login').hidden = false; $('#loginUser').focus(); }
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('#loginErr').textContent = '';
+  try {
+    await api('/api/login', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: $('#loginUser').value, password: $('#loginPass').value}),
+    });
+    location.reload();
+  } catch (err) { $('#loginErr').textContent = err.message; }
+});
+function renderUserChip() {
+  if (!me?.user) { $('#userChip').innerHTML = ''; return; }
+  $('#userChip').innerHTML = `${esc(me.user.name)} (${esc(me.user.role)})
+    <button id="logoutBtn">sign out</button>`;
+  $('#logoutBtn').addEventListener('click', async () => {
+    await api('/api/logout', {method: 'POST'});
+    location.reload();
+  });
 }
 
 /* ---------- generic sortable tables ---------- */
@@ -211,9 +259,11 @@ window.addEventListener('hashchange', route);
 /* ---------- live events (SSE) ---------- */
 let liveState = null, lastGen = null;
 const dismissedJobs = new Set();
-const es = new EventSource('/api/events');
-es.onmessage = e => handleState(JSON.parse(e.data));
-es.onerror = () => { $('#scanStatus').textContent = 'live updates disconnected — retrying…'; };
+function startEvents() {
+  const es = new EventSource('/api/events');
+  es.onmessage = e => handleState(JSON.parse(e.data));
+  es.onerror = () => { $('#scanStatus').textContent = 'live updates disconnected — retrying…'; };
+}
 
 function handleState(st) {
   liveState = st;
@@ -482,7 +532,7 @@ async function renderTxDetail(id, container, mode) {
       <dt>entries</dt><dd>${num(t.entries.length)} (${num(sharedCount)} shared with other transactions)${missing ? ` <span class="sev-error">${num(missing)} missing on disk!</span>` : ''}</dd>
       <dt>size</dt><dd>${fmt(totalA)} apparent · ${fmt(totalD)} on disk <span class="muted">(shared dirs counted in full)</span></dd>
     </dl>
-    ${t.active ? `<p>
+    ${t.active && canMutate() ? `<p>
       <button class="btn" onclick="delTx(${t.id}, true)">Dry-run delete</button>
       <button class="btn danger" onclick="delTx(${t.id}, false)">Delete transaction…</button>
     </p><div id="delOut"></div>` : ''}
@@ -680,11 +730,11 @@ async function loadStrays() {
       <div class="card"><div class="k">Stray on disk</div><div class="v">${fmt(s.totals.disk)}</div></div>
       <div class="card"><div class="k">Missing payloads</div><div class="v ${s.missing.length ? 'sev-error' : ''}">${num(s.missing.length)}</div></div>
     </div>
-    <div class="toolbar" style="margin-top:14px">
+    ${canMutate() ? `<div class="toolbar" style="margin-top:14px">
       <button class="btn" onclick="pruneAll(true)">Dry-run prune</button>
       <button class="btn danger" onclick="pruneAll(false)">Prune all strays…</button>
       <span id="pruneOut"></span>
-    </div>
+    </div>` : ''}
     ${s.missing.length ? `<h3>Missing payloads (integrity problems, not strays — never pruned)</h3>
       <table><thead><tr><th>dir</th><th>transaction</th><th>problem</th></tr></thead><tbody>
       ${s.missing.map(m => `<tr><td class="mono break">${esc(m.name)}/${esc(m.hash)}</td>
@@ -753,8 +803,15 @@ async function loadCheck() {
     </tbody></table>`;
 }
 
-refreshSummary();
-route();
+async function init() {
+  try { me = await api('/api/me'); } catch { me = { auth_enabled: false, user: null }; }
+  if (me.auth_enabled && !me.user) { showLogin(); return; }
+  renderUserChip();
+  startEvents();
+  refreshSummary();
+  route();
+}
+init();
 </script>
 </body>
 </html>

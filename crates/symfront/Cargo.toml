@@ -7,6 +7,11 @@ license.workspace = true
 [dependencies]
 symfront-core = { path = "../symfront-core" }
 anyhow = "1"
+argon2 = "0.5"
+rand_core = { version = "0.6", features = ["std"] }
+rpassword = "7"
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
 clap = { version = "4", features = ["derive", "env"] }
 axum = "0.8"
 notify = "8"
@@ -16,3 +21,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
