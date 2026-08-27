@@ -1,0 +1,639 @@
+//! HTTP API + embedded single-page UI (axum).
+//!
+//! The logical index (admin records) loads at startup and reloads after every
+//! mutation. A full tree scan (sizes, strays, deep consistency) runs in a
+//! background thread at startup and after each mutation.
+//!
+//! Mutations (delete, prune) run as server-side background *jobs* in dedicated
+//! threads: they survive the browser navigating away or disconnecting.
+//! `/api/events` is an SSE stream broadcasting scan status, job progress, and
+//! an index generation counter, so every connected page sees live updates
+//! regardless of who started an operation.
+
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, SystemTime};
+
+use axum::extract::{Path as AxPath, Query, State};
+use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{Html, IntoResponse, Response};
+use axum::routing::{delete, get, post};
+use axum::{Json, Router};
+use serde::Deserialize;
+use serde_json::json;
+use tokio_stream::StreamExt;
+
+use symfront_core::check::{self, Finding};
+use symfront_core::index::StoreIndex;
+use symfront_core::ops::{self, OpProgress};
+use symfront_core::scan::{self, ScanProgress, SizeTotals};
+use symfront_core::strays::{self, StrayReport, TxIssues, TxSizes};
+use symfront_core::{Store, TransactionId};
+
+/// Result of a completed scan, condensed (the raw per-dir listing is dropped).
+struct ScanBundle {
+    totals: SizeTotals,
+    admin: SizeTotals,
+    payload: SizeTotals,
+    scanned_at: u64,
+    duration_ms: u64,
+    strays: StrayReport,
+    tx_sizes: HashMap<TransactionId, TxSizes>,
+    tx_issues: HashMap<TransactionId, TxIssues>,
+    deep_findings: Vec<Finding>,
+}
+
+#[derive(Default)]
+struct ScanSlot {
+    running: Option<Arc<ScanProgress>>,
+    result: Option<Arc<ScanBundle>>,
+    error: Option<String>,
+}
+
+enum JobState {
+    Running,
+    Done(serde_json::Value),
+    Failed(String),
+}
+
+/// A background mutation. Lives in its own thread; the HTTP response returns
+/// immediately with the job id and progress streams over `/api/events`.
+struct Job {
+    id: u64,
+    kind: &'static str, // "delete" | "prune"
+    target: String,
+    progress: OpProgress,
+    state: Mutex<JobState>,
+    finished_at: Mutex<Option<SystemTime>>,
+}
+
+impl Job {
+    fn to_json(&self) -> serde_json::Value {
+        let state = self.state.lock().unwrap();
+        let (state_str, outcome, error) = match &*state {
+            JobState::Running => ("running", None, None),
+            JobState::Done(v) => ("done", Some(v.clone()), None),
+            JobState::Failed(e) => ("failed", None, Some(e.clone())),
+        };
+        json!({
+            "id": self.id,
+            "kind": self.kind,
+            "target": self.target,
+            "state": state_str,
+            "progress": self.progress.snapshot(),
+            "outcome": outcome,
+            "error": error,
+        })
+    }
+}
+
+struct AppState {
+    store: Store,
+    index: RwLock<Arc<StoreIndex>>,
+    scan: Mutex<ScanSlot>,
+    jobs: Mutex<Vec<Arc<Job>>>,
+    next_job_id: AtomicU64,
+    /// Bumped whenever the index reloads; clients refetch when it changes.
+    generation: AtomicU64,
+}
+
+type App = Arc<AppState>;
+
+struct ApiError(StatusCode, String);
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (self.0, Json(json!({ "error": self.1 }))).into_response()
+    }
+}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(e: anyhow::Error) -> Self {
+        ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"))
+    }
+}
+
+impl From<symfront_core::Error> for ApiError {
+    fn from(e: symfront_core::Error) -> Self {
+        let code = match &e {
+            symfront_core::Error::TxNotFound(_) => StatusCode::NOT_FOUND,
+            symfront_core::Error::TxNotActive(..) | symfront_core::Error::Refused(_) => {
+                StatusCode::CONFLICT
+            }
+            symfront_core::Error::Locked => StatusCode::LOCKED,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        ApiError(code, e.to_string())
+    }
+}
+
+type ApiResult<T> = std::result::Result<T, ApiError>;
+
+fn reload_index(state: &App) -> symfront_core::Result<Arc<StoreIndex>> {
+    let index = Arc::new(StoreIndex::load(&state.store)?);
+    *state.index.write().unwrap() = Arc::clone(&index);
+    state.generation.fetch_add(1, Ordering::Relaxed);
+    Ok(index)
+}
+
+fn spawn_scan(state: App) {
+    let progress = {
+        let mut slot = state.scan.lock().unwrap();
+        if slot.running.is_some() {
+            return;
+        }
+        let progress = Arc::new(ScanProgress::default());
+        slot.running = Some(Arc::clone(&progress));
+        slot.error = None;
+        progress
+    };
+    std::thread::spawn(move || {
+        let index = Arc::clone(&state.index.read().unwrap());
+        let outcome = scan::scan(&state.store, true, &progress);
+        let mut slot = state.scan.lock().unwrap();
+        slot.running = None;
+        match outcome {
+            Ok(scan) => {
+                let analysis = strays::analyze(&index, &scan);
+                let deep_findings = check::check_deep(&index, &scan);
+                slot.result = Some(Arc::new(ScanBundle {
+                    totals: scan.total,
+                    admin: scan.admin,
+                    payload: scan.payload,
+                    scanned_at: scan.scanned_at,
+                    duration_ms: scan.duration_ms,
+                    strays: analysis.strays,
+                    tx_sizes: analysis.tx_sizes,
+                    tx_issues: analysis.tx_issues,
+                    deep_findings,
+                }));
+                drop(slot);
+                // New analysis affects tx list badges etc.
+                state.generation.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(e) => {
+                slot.error = Some(e.to_string());
+            }
+        }
+    });
+}
+
+/// Run a mutation as a background job. Returns the job id immediately.
+fn spawn_job(
+    state: App,
+    kind: &'static str,
+    target: String,
+    work: impl FnOnce(&OpProgress) -> symfront_core::Result<serde_json::Value> + Send + 'static,
+) -> u64 {
+    let id = state.next_job_id.fetch_add(1, Ordering::Relaxed);
+    let job = Arc::new(Job {
+        id,
+        kind,
+        target,
+        progress: OpProgress::default(),
+        state: Mutex::new(JobState::Running),
+        finished_at: Mutex::new(None),
+    });
+    state.jobs.lock().unwrap().push(Arc::clone(&job));
+    std::thread::spawn(move || {
+        let result = work(&job.progress);
+        *job.state.lock().unwrap() = match result {
+            Ok(v) => JobState::Done(v),
+            Err(e) => JobState::Failed(e.to_string()),
+        };
+        *job.finished_at.lock().unwrap() = Some(SystemTime::now());
+        // The store changed (or might have, even on failure): refresh
+        // everything so every connected client converges on reality.
+        if let Err(e) = reload_index(&state) {
+            tracing::error!("index reload after job {id} failed: {e}");
+        }
+        state.scan.lock().unwrap().result = None;
+        spawn_scan(state);
+    });
+    id
+}
+
+#[tokio::main]
+pub async fn serve(store_path: PathBuf, listen: String) -> anyhow::Result<()> {
+    let store = Store::open(&store_path)?;
+    tracing::info!("loading index for {}", store.root().display());
+    let index = Arc::new(StoreIndex::load(&store)?);
+    tracing::info!(
+        "index loaded: {} transactions, {} entries",
+        index.transactions.len(),
+        index.entries.len()
+    );
+    let state: App = Arc::new(AppState {
+        store,
+        index: RwLock::new(index),
+        scan: Mutex::new(ScanSlot::default()),
+        jobs: Mutex::new(Vec::new()),
+        next_job_id: AtomicU64::new(1),
+        generation: AtomicU64::new(1),
+    });
+    spawn_scan(Arc::clone(&state));
+
+    let app = Router::new()
+        .route("/", get(|| async { Html(include_str!("ui/index.html")) }))
+        .route("/api/summary", get(summary))
+        .route("/api/events", get(events))
+        .route("/api/transactions", get(tx_list))
+        .route("/api/transactions/{id}", get(tx_detail))
+        .route("/api/transactions/{id}", delete(tx_delete))
+        .route("/api/search", get(search))
+        .route("/api/strays", get(strays_report))
+        .route("/api/strays/prune", post(prune))
+        .route("/api/check", get(check_endpoint))
+        .route("/api/scan", post(rescan))
+        .with_state(state);
+
+    let addr: SocketAddr = listen.parse()?;
+    tracing::info!("listening on http://{addr}");
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await?;
+    Ok(())
+}
+
+fn scan_status_json(state: &App) -> serde_json::Value {
+    let slot = state.scan.lock().unwrap();
+    if let Some(p) = &slot.running {
+        return json!({
+            "status": "running",
+            "files": p.files.load(Ordering::Relaxed),
+            "dirs": p.dirs.load(Ordering::Relaxed),
+        });
+    }
+    if let Some(e) = &slot.error {
+        return json!({ "status": "failed", "error": e });
+    }
+    match &slot.result {
+        Some(b) => json!({
+            "status": "done",
+            "scanned_at": b.scanned_at,
+            "duration_ms": b.duration_ms,
+            "totals": b.totals,
+            "admin": b.admin,
+            "payload": b.payload,
+        }),
+        None => json!({ "status": "idle" }),
+    }
+}
+
+fn state_snapshot(state: &App) -> serde_json::Value {
+    // Drop jobs that finished a while ago so the list can't grow forever.
+    let jobs_json: Vec<serde_json::Value> = {
+        let mut jobs = state.jobs.lock().unwrap();
+        jobs.retain(|j| match *j.finished_at.lock().unwrap() {
+            Some(t) => t.elapsed().map(|e| e < Duration::from_secs(300)).unwrap_or(true),
+            None => true,
+        });
+        jobs.iter().map(|j| j.to_json()).collect()
+    };
+    json!({
+        "gen": state.generation.load(Ordering::Relaxed),
+        "scan": scan_status_json(state),
+        "jobs": jobs_json,
+    })
+}
+
+/// SSE stream: a state snapshot every 750 ms.
+async fn events(
+    State(state): State<App>,
+) -> Sse<impl tokio_stream::Stream<Item = std::result::Result<Event, std::convert::Infallible>>> {
+    let interval = tokio::time::interval(Duration::from_millis(750));
+    let stream = tokio_stream::wrappers::IntervalStream::new(interval)
+        .map(move |_| Ok(Event::default().data(state_snapshot(&state).to_string())));
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn summary(State(state): State<App>) -> ApiResult<Json<serde_json::Value>> {
+    let index = Arc::clone(&state.index.read().unwrap());
+    let journals = ops::pending_journals(&state.store)?;
+    let active = index.active_transactions().count();
+    let deleted = index
+        .transactions
+        .values()
+        .filter(|t| !t.deleted_by.is_empty())
+        .count();
+    Ok(Json(json!({
+        "store": state.store.root().to_string_lossy(),
+        "lastid": index.lastid,
+        "transactions_active": active,
+        "transactions_deleted": deleted,
+        "del_records": index.dels.len(),
+        "entries": index.entries.len(),
+        "referenced_dirs": index.referenced_dirs().len(),
+        "pending_journals": journals,
+        "scan": scan_status_json(&state),
+        "gen": state.generation.load(Ordering::Relaxed),
+    })))
+}
+
+async fn tx_list(State(state): State<App>) -> Json<serde_json::Value> {
+    let index = Arc::clone(&state.index.read().unwrap());
+    let (sizes, issues) = {
+        let slot = state.scan.lock().unwrap();
+        match &slot.result {
+            Some(b) => (Some(b.tx_sizes.clone()), Some(b.tx_issues.clone())),
+            None => (None, None),
+        }
+    };
+    let rows: Vec<serde_json::Value> = index
+        .transactions
+        .values()
+        .map(|t| {
+            let s = sizes.as_ref().and_then(|m| m.get(&t.id)).copied();
+            let i = issues.as_ref().and_then(|m| m.get(&t.id)).copied();
+            json!({
+                "id": t.id,
+                "id_str": t.id.to_string(),
+                "record": t.record,
+                "deleted_by": t.deleted_by,
+                "in_server_txt": t.in_server_txt,
+                "file_state": t.file_state,
+                "entry_count": t.entry_count,
+                "active": t.is_active(),
+                "sizes": s,
+                "issues": i,
+            })
+        })
+        .collect();
+    Json(json!({ "transactions": rows, "have_scan": sizes.is_some() }))
+}
+
+async fn tx_detail(
+    State(state): State<App>,
+    AxPath(id): AxPath<u32>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let id = TransactionId(id);
+    let index = Arc::clone(&state.index.read().unwrap());
+    let Some(t) = index.transactions.get(&id) else {
+        return Err(symfront_core::Error::TxNotFound(id).into());
+    };
+    let t = t.clone();
+    let store = state.store.clone();
+    // Stat this transaction's dirs on demand (cheap: a few reads per entry).
+    let (entries, sharing) = tokio::task::spawn_blocking(
+        move || -> ApiResult<(Vec<serde_json::Value>, Vec<serde_json::Value>)> {
+            let entries = symfront_core::index::load_entries(&store, id)?;
+            // Set comparison: for each other transaction, how many of our
+            // entries' hash dirs it also references.
+            let mut share_counts: HashMap<TransactionId, u64> = HashMap::new();
+            let rows = entries
+                .iter()
+                .map(|e| {
+                    let dir = store.hash_dir(&e.name, &e.hash);
+                    let (mut size, mut disk, mut files, mut found) = (0u64, 0u64, 0u64, false);
+                    if let Ok(rd) = std::fs::read_dir(&dir) {
+                        for ent in rd.flatten() {
+                            if let Ok(md) = ent.metadata() {
+                                if md.is_file() {
+                                    use std::os::unix::fs::MetadataExt;
+                                    size += md.len();
+                                    disk += md.blocks() * 512;
+                                    files += 1;
+                                    found = true;
+                                }
+                            }
+                        }
+                    }
+                    let mut shared_with: Vec<TransactionId> = index
+                        .dir_refs(&e.name.to_lowercase(), &e.hash.to_lowercase())
+                        .iter()
+                        .map(|i| index.entries[*i as usize].tx)
+                        .filter(|tx| *tx != id)
+                        .collect();
+                    shared_with.sort();
+                    shared_with.dedup();
+                    for tx in &shared_with {
+                        *share_counts.entry(*tx).or_default() += 1;
+                    }
+                    json!({
+                        "name": e.name,
+                        "hash": e.hash,
+                        "source": e.source,
+                        "present": found,
+                        "files": files,
+                        "apparent": size,
+                        "disk": disk,
+                        "shared_with": shared_with,
+                    })
+                })
+                .collect();
+            let mut sharing: Vec<(TransactionId, u64)> = share_counts.into_iter().collect();
+            sharing.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            let sharing = sharing
+                .into_iter()
+                .map(|(tx, count)| {
+                    let rec = index.transactions.get(&tx).and_then(|t| t.record.as_ref());
+                    json!({
+                        "tx": tx,
+                        "id_str": tx.to_string(),
+                        "product": rec.map(|r| r.product.clone()),
+                        "version": rec.map(|r| r.version.clone()),
+                        "date": rec.map(|r| r.date.clone()),
+                        "shared_entries": count,
+                    })
+                })
+                .collect();
+            Ok((rows, sharing))
+        },
+    )
+    .await
+    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+
+    let issues = state
+        .scan
+        .lock()
+        .unwrap()
+        .result
+        .as_ref()
+        .and_then(|b| b.tx_issues.get(&id).copied());
+    Ok(Json(json!({
+        "id": t.id,
+        "id_str": t.id.to_string(),
+        "record": t.record,
+        "deleted_by": t.deleted_by,
+        "in_server_txt": t.in_server_txt,
+        "file_state": t.file_state,
+        "active": t.is_active(),
+        "entries": entries,
+        "sharing": sharing,
+        "issues": issues,
+    })))
+}
+
+#[derive(Deserialize)]
+struct DeleteParams {
+    #[serde(default)]
+    dry_run: bool,
+}
+
+async fn tx_delete(
+    State(state): State<App>,
+    AxPath(id): AxPath<u32>,
+    Query(params): Query<DeleteParams>,
+) -> ApiResult<Response> {
+    let id = TransactionId(id);
+    if params.dry_run {
+        // Dry runs are read-only and fast: run them synchronously.
+        let store = state.store.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            ops::delete_transaction(&store, id, true, &OpProgress::default())
+        })
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+        return Ok(Json(serde_json::to_value(&outcome).unwrap()).into_response());
+    }
+    // Cheap validation up front so obvious errors are synchronous.
+    {
+        let index = state.index.read().unwrap();
+        match index.transactions.get(&id) {
+            None => return Err(symfront_core::Error::TxNotFound(id).into()),
+            Some(t) if !t.is_active() => {
+                return Err(
+                    symfront_core::Error::TxNotActive(id, "not an active transaction".into())
+                        .into(),
+                )
+            }
+            _ => {}
+        }
+    }
+    let store = state.store.clone();
+    let job = spawn_job(
+        Arc::clone(&state),
+        "delete",
+        id.to_string(),
+        move |progress| {
+            let outcome = ops::delete_transaction(&store, id, false, progress)?;
+            Ok(serde_json::to_value(&outcome).unwrap())
+        },
+    );
+    Ok((StatusCode::ACCEPTED, Json(json!({ "job": job }))).into_response())
+}
+
+#[derive(Deserialize)]
+struct SearchParams {
+    q: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+
+fn default_limit() -> usize {
+    200
+}
+
+async fn search(
+    State(state): State<App>,
+    Query(params): Query<SearchParams>,
+) -> Json<serde_json::Value> {
+    let index = Arc::clone(&state.index.read().unwrap());
+    let hits = index.search(&params.q, params.limit.min(2000));
+    Json(json!({ "hits": hits, "limited": hits.len() >= params.limit.min(2000) }))
+}
+
+async fn strays_report(State(state): State<App>) -> ApiResult<Json<serde_json::Value>> {
+    let slot = state.scan.lock().unwrap();
+    match &slot.result {
+        Some(b) => Ok(Json(json!({
+            "strays": b.strays,
+            "scanned_at": b.scanned_at,
+        }))),
+        None => Err(ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "scan not finished yet".into(),
+        )),
+    }
+}
+
+#[derive(Deserialize)]
+struct PruneRequest {
+    #[serde(default)]
+    paths: Vec<String>,
+    /// Prune everything in the current stray report.
+    #[serde(default)]
+    all: bool,
+    #[serde(default)]
+    dry_run: bool,
+}
+
+async fn prune(
+    State(state): State<App>,
+    Json(req): Json<PruneRequest>,
+) -> ApiResult<Response> {
+    let paths = if req.all {
+        let slot = state.scan.lock().unwrap();
+        match &slot.result {
+            Some(b) => b.strays.strays.iter().map(|s| s.rel_path.clone()).collect(),
+            None => {
+                return Err(ApiError(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "scan not finished yet".into(),
+                ))
+            }
+        }
+    } else {
+        req.paths
+    };
+    if paths.is_empty() {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "no paths given".into()));
+    }
+    if req.dry_run {
+        let store = state.store.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            ops::prune_strays(&store, &paths, true, &OpProgress::default())
+        })
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+        return Ok(Json(serde_json::to_value(&outcome).unwrap()).into_response());
+    }
+    let store = state.store.clone();
+    let count = paths.len();
+    let job = spawn_job(
+        Arc::clone(&state),
+        "prune",
+        format!("{count} stray paths"),
+        move |progress| {
+            let outcome = ops::prune_strays(&store, &paths, false, progress)?;
+            Ok(serde_json::to_value(&outcome).unwrap())
+        },
+    );
+    Ok((StatusCode::ACCEPTED, Json(json!({ "job": job }))).into_response())
+}
+
+async fn check_endpoint(State(state): State<App>) -> ApiResult<Json<serde_json::Value>> {
+    let index = Arc::clone(&state.index.read().unwrap());
+    let store = state.store.clone();
+    let admin = tokio::task::spawn_blocking(move || check::check_admin(&store, &index))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+    let (deep, missing) = {
+        let slot = state.scan.lock().unwrap();
+        match &slot.result {
+            Some(b) => (
+                Some(b.deep_findings.clone()),
+                Some(b.strays.missing.clone()),
+            ),
+            None => (None, None),
+        }
+    };
+    Ok(Json(json!({
+        "admin": admin,
+        "deep": deep,
+        "missing_payloads": missing,
+    })))
+}
+
+async fn rescan(State(state): State<App>) -> ApiResult<Json<serde_json::Value>> {
+    reload_index(&state)?;
+    spawn_scan(Arc::clone(&state));
+    Ok(Json(json!({ "started": true })))
+}

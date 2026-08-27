@@ -1,0 +1,103 @@
+mod cli;
+mod web;
+
+use clap::{Parser, Subcommand};
+use symfront_core::TransactionId;
+
+/// Manage a Windows NT symbol store on a POSIX host.
+#[derive(Parser)]
+#[command(name = "symfront", version, about)]
+struct Args {
+    /// Path to the symbol store root.
+    #[arg(long, global = true, env = "SYMFRONT_STORE", default_value = "/srv/symstore")]
+    store: std::path::PathBuf,
+
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run the web UI / HTTP API server.
+    Serve {
+        /// Address to listen on.
+        #[arg(long, default_value = "127.0.0.1:8710")]
+        listen: String,
+    },
+    /// Quick store summary (admin records only; no tree walk).
+    Status,
+    /// List transactions.
+    Tx {
+        #[command(subcommand)]
+        command: TxCommand,
+    },
+    /// Search indexed files by name substring, hash prefix, or source path.
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
+    /// Detect stray files not accounted for by any active transaction.
+    Strays {
+        /// Delete the strays found.
+        #[arg(long)]
+        prune: bool,
+        /// With --prune: show what would be removed without removing it.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Consistency checks over the admin records (and refs.ptr with --deep).
+    Check {
+        /// Also read every refs.ptr and cross-check against the manifests.
+        #[arg(long)]
+        deep: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TxCommand {
+    /// List transactions (active by default).
+    List {
+        /// Include deleted and anomalous transactions.
+        #[arg(long)]
+        all: bool,
+        /// Walk the tree to compute per-transaction sizes.
+        #[arg(long)]
+        sizes: bool,
+    },
+    /// Show one transaction in detail (walks the tree for sizes).
+    Show { id: TransactionId },
+    /// Delete a transaction (like `symstore del`).
+    Del {
+        id: TransactionId,
+        /// Show what would happen without changing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the confirmation prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "symfront=info,tower_http=info".into()),
+        )
+        .init();
+
+    let args = Args::parse();
+    match args.command {
+        Command::Serve { listen } => web::serve(args.store, listen),
+        Command::Status => cli::status(&args.store),
+        Command::Tx { command } => match command {
+            TxCommand::List { all, sizes } => cli::tx_list(&args.store, all, sizes),
+            TxCommand::Show { id } => cli::tx_show(&args.store, id),
+            TxCommand::Del { id, dry_run, yes } => cli::tx_del(&args.store, id, dry_run, yes),
+        },
+        Command::Search { query, limit } => cli::search(&args.store, &query, limit),
+        Command::Strays { prune, dry_run } => cli::strays(&args.store, prune, dry_run),
+        Command::Check { deep } => cli::check(&args.store, deep),
+    }
+}

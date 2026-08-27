@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>symfront</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #171d24; --panel2: #1d242d; --border: #2a333f;
+    --text: #d8dee6; --muted: #8b98a7; --accent: #4da3ff; --ok: #4fc36a;
+    --warn: #e0b34d; --err: #e06060; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  a:visited { color: var(--accent); }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 14px 22px;
+           border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
+  header h1 a { color: inherit; text-decoration: none; }
+  header .store { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  header .scan { margin-left: auto; font-size: 12px; color: var(--muted); }
+  nav { display: flex; gap: 4px; padding: 10px 22px 0; }
+  nav a { color: var(--muted); padding: 8px 14px; font-size: 14px; cursor: pointer;
+          border-bottom: 2px solid transparent; text-decoration: none; }
+  nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+  main { padding: 18px 22px 60px; max-width: 1280px; }
+  main.wide { max-width: none; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+  .card .v { font-size: 22px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+       position: sticky; top: 0; background: var(--bg); z-index: 1; }
+  th[data-key] { cursor: pointer; user-select: none; white-space: nowrap; }
+  th[data-key]:hover { color: var(--text); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.row { cursor: pointer; }
+  tr.row:hover { background: var(--panel2); }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .muted { color: var(--muted); }
+  .break { word-break: break-all; overflow-wrap: anywhere; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11.5px; white-space: nowrap; }
+  .pill.active { background: #14331d; color: var(--ok); }
+  .pill.deleted { background: #332020; color: var(--err); }
+  .pill.anomalous, .pill.incomplete { background: #33290f; color: var(--warn); }
+  .pill.deleting { background: #142a3d; color: var(--accent); }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  input[type=text], select { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+                     border-radius: 6px; padding: 8px 12px; font-size: 14px; }
+  input[type=text] { width: 340px; }
+  input[type=text]:focus, select:focus { outline: none; border-color: var(--accent); }
+  button.btn { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+               border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+  button.btn:hover { border-color: var(--accent); }
+  button.btn.danger { color: var(--err); }
+  button.btn.danger:hover { border-color: var(--err); }
+  a.btn { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+          padding: 7px 14px; font-size: 13px; text-decoration: none; color: var(--text); }
+  .banner { padding: 10px 14px; border-radius: 8px; margin: 10px 0; }
+  .banner.err { background: #2c1a1a; border: 1px solid #5c3030; color: #f0b0b0; }
+  .banner.warn { background: #2e2712; border: 1px solid #5c4f28; color: #e8d49a; }
+  .banner.ok { background: #14251a; border: 1px solid #2b5237; color: #a8e0b8; }
+  .banner.info { background: #14222e; border: 1px solid #2a4258; color: #a8c8e0; }
+  #detail { position: fixed; top: 0; right: 0; bottom: 0; width: min(860px, 92vw);
+            background: var(--panel); border-left: 1px solid var(--border); padding: 20px 24px;
+            overflow-y: auto; transform: translateX(105%); transition: transform .15s ease; z-index: 5; }
+  #detail.open { transform: none; box-shadow: -12px 0 40px rgba(0,0,0,.5); }
+  #detail h2 { margin-top: 0; }
+  #detail td, #detail th { word-break: break-word; overflow-wrap: anywhere; }
+  #detail th { background: var(--panel); }
+  dl { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; margin: 12px 0; }
+  dt { color: var(--muted); } dd { margin: 0; }
+  .sev-error { color: var(--err); } .sev-warning { color: var(--warn); } .sev-info { color: var(--muted); }
+  h2.mono { font-size: 20px; }
+  h3 { margin: 18px 0 4px; font-size: 15px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel2);
+          border: 1px solid var(--accent); border-radius: 10px; padding: 2px 10px; font-size: 12px; }
+  .chip button { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; }
+  #jobs { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column;
+          gap: 8px; z-index: 20; width: 320px; }
+  .job { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+         padding: 10px 12px; font-size: 12.5px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+  .job.done { border-color: #2b5237; }
+  .job.failed { border-color: #5c3030; }
+  .job .jt { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; margin-bottom: 2px; }
+  .job .jt button { background: none; border: none; color: var(--muted); cursor: pointer; }
+  .job .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .job .bar div { height: 100%; background: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="#overview">symfront</a></h1>
+  <span class="store" id="storePath"></span>
+  <span class="scan" id="scanStatus"></span>
+</header>
+<nav id="nav">
+  <a href="#overview" data-tab="overview">Overview</a>
+  <a href="#transactions" data-tab="transactions">Transactions</a>
+  <a href="#search" data-tab="search">Search</a>
+  <a href="#strays" data-tab="strays">Strays</a>
+  <a href="#check" data-tab="check">Check</a>
+</nav>
+<main id="main">
+  <section id="tab-overview"></section>
+
+  <section id="tab-transactions" hidden>
+    <div class="toolbar">
+      <input type="text" id="txFilter" placeholder="filter by product / version / id…">
+      <select id="txStatusSel">
+        <option value="live">live (active + incomplete)</option>
+        <option value="active">active only</option>
+        <option value="incomplete">incomplete only</option>
+        <option value="deleted">deleted only</option>
+        <option value="all">all</option>
+      </select>
+      <span class="muted" id="txCount"></span>
+    </div>
+    <div id="txTable"></div>
+  </section>
+
+  <section id="tab-search" hidden>
+    <div class="toolbar">
+      <input type="text" id="searchBox" placeholder="file name substring, hash prefix, or source path fragment…">
+      <span class="muted" id="searchInfo"></span>
+    </div>
+    <div id="searchResults"></div>
+  </section>
+
+  <section id="tab-strays" hidden>
+    <div id="straysTop"></div>
+    <div id="straysTable"></div>
+  </section>
+
+  <section id="tab-check" hidden></section>
+
+  <section id="tab-tx" hidden>
+    <div class="toolbar">
+      <a href="#transactions" class="muted">&larr; all transactions</a>
+    </div>
+    <div id="txPage"></div>
+  </section>
+</main>
+<aside id="detail"></aside>
+<div id="jobs"></div>
+
+<script>
+const $ = (s, el) => (el || document).querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad = n => String(n).padStart(10, '0');
+const fmt = n => {
+  if (n == null || n < 0) return '—';
+  const u = ['B','KiB','MiB','GiB','TiB']; let v = n, i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return i ? v.toFixed(1) + ' ' + u[i] : v + ' B';
+};
+const num = n => (n == null) ? '—' : Number(n).toLocaleString();
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(body.error || r.statusText); e.status = r.status; throw e; }
+  return body;
+}
+
+/* ---------- generic sortable tables ---------- */
+function sortArrow(sort, key) { return sort.key === key ? (sort.dir > 0 ? ' ▲' : ' ▼') : ''; }
+function bindSort(container, sort, numericKeys, render) {
+  container.querySelectorAll('th[data-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.key;
+      if (sort.key === k) sort.dir = -sort.dir;
+      else { sort.key = k; sort.dir = numericKeys.includes(k) ? -1 : 1; }
+      render();
+    });
+  });
+}
+function sorted(arr, sort, accessors) {
+  const acc = accessors[sort.key] || (x => x[sort.key]);
+  return [...arr].sort((a, b) => {
+    const va = acc(a), vb = acc(b);
+    if (va < vb) return -sort.dir;
+    if (va > vb) return sort.dir;
+    return 0;
+  });
+}
+
+/* ---------- routing ---------- */
+function currentTab() {
+  const hash = location.hash || '#overview';
+  return hash.match(/^#tx\//) ? 'tx' : hash.slice(1);
+}
+function route() {
+  const hash = location.hash || '#overview';
+  const txMatch = hash.match(/^#tx\/(\d+)$/);
+  const tab = txMatch ? 'tx' : hash.slice(1);
+  const navTab = txMatch ? 'transactions' : tab;
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === navTab));
+  document.querySelectorAll('main section').forEach(s => s.hidden = s.id !== 'tab-' + tab);
+  $('#main').classList.toggle('wide', tab === 'tx');
+  closeDetail();
+  if (txMatch) openTxPage(+txMatch[1]);
+  else ({overview: renderOverview, transactions: loadTransactions, strays: loadStrays, check: loadCheck}[tab] || (()=>{}))();
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- live events (SSE) ---------- */
+let liveState = null, lastGen = null;
+const dismissedJobs = new Set();
+const es = new EventSource('/api/events');
+es.onmessage = e => handleState(JSON.parse(e.data));
+es.onerror = () => { $('#scanStatus').textContent = 'live updates disconnected — retrying…'; };
+
+function handleState(st) {
+  liveState = st;
+  updateScanHeader(st.scan);
+  renderJobs(st.jobs);
+  patchDeletingRows(st.jobs);
+  patchDelOut(st.jobs);
+  if (straysWaiting) {
+    if (st.scan.status === 'done') { straysWaiting = false; loadStrays(); }
+    else updateStraysWaiting(st.scan);
+  }
+  if (lastGen === null) lastGen = st.gen;
+  else if (st.gen !== lastGen) {
+    lastGen = st.gen;
+    refreshSummary();
+    const tab = currentTab();
+    if (tab === 'transactions') loadTransactions();
+    else if (tab === 'strays' && !straysWaiting) loadStrays();
+    else if (tab === 'check') loadCheck();
+  }
+}
+
+function updateScanHeader(sc) {
+  let txt;
+  if (sc.status === 'running') txt = `scanning… ${num(sc.files)} files`;
+  else if (sc.status === 'done') txt = `scanned ${num(sc.totals.files)} files in ${(sc.duration_ms/1000).toFixed(1)}s`;
+  else if (sc.status === 'failed') txt = `scan failed: ${sc.error}`;
+  else txt = 'scan idle';
+  $('#scanStatus').textContent = txt;
+}
+
+function jobLabel(j) {
+  return j.kind === 'delete' ? `deleting tx ${j.target}` : `pruning ${j.target}`;
+}
+
+function renderJobs(jobs) {
+  const shown = jobs.filter(j => !dismissedJobs.has(j.id));
+  $('#jobs').innerHTML = shown.map(j => {
+    const p = j.progress;
+    let body;
+    if (j.state === 'running') {
+      body = `${num(p.done)}/${num(p.total)} · ${num(p.files_removed)} files · ${fmt(p.freed_apparent)} freed`;
+    } else if (j.state === 'done') {
+      const o = j.outcome || {};
+      body = `✓ done — ${num(o.files_removed)} files removed, ${fmt(o.freed_apparent)} apparent / ${fmt(o.freed_disk)} on disk freed`;
+    } else {
+      body = `✗ failed: ${esc(j.error)}`;
+    }
+    return `<div class="job ${j.state}">
+      <div class="jt"><span>${esc(jobLabel(j))}</span>
+        ${j.state !== 'running' ? `<button data-dismiss="${j.id}" title="dismiss">✕</button>` : ''}</div>
+      <div class="jb muted">${body}</div>
+      ${j.state === 'running' && p.total ? `<div class="bar"><div style="width:${(100*p.done/p.total).toFixed(1)}%"></div></div>` : ''}
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#jobs [data-dismiss]').forEach(b =>
+    b.addEventListener('click', () => { dismissedJobs.add(+b.dataset.dismiss); renderJobs(liveState.jobs); }));
+}
+
+function runningDeleteJob(txId) {
+  return liveState?.jobs?.find(j => j.kind === 'delete' && j.state === 'running' && +j.target === txId);
+}
+
+function patchDeletingRows(jobs) {
+  jobs.filter(j => j.kind === 'delete' && j.state === 'running').forEach(j => {
+    const tr = document.querySelector(`#txTable tr[data-id="${+j.target}"]`);
+    if (!tr) return;
+    const p = j.progress;
+    tr.cells[tr.cells.length - 1].innerHTML =
+      `<span class="pill deleting">deleting…</span><br>
+       <span class="muted" style="font-size:11px">${num(p.done)}/${num(p.total)} · ${fmt(p.freed_apparent)}</span>`;
+  });
+}
+
+function patchDelOut(jobs) {
+  const out = $('#delOut');
+  if (!out || !currentTx) return;
+  const j = jobs.find(j => j.kind === 'delete' && +j.target === currentTx.data.id);
+  if (!j) return;
+  const p = j.progress;
+  if (j.state === 'running') {
+    out.innerHTML = `<div class="banner info">Deleting in the background (safe to navigate away):
+      ${num(p.done)}/${num(p.total)} dirs · ${num(p.files_removed)} files · ${fmt(p.freed_apparent)} freed</div>`;
+  } else if (j.state === 'done') {
+    const o = j.outcome || {};
+    out.innerHTML = `<div class="banner ok">Deleted (recorded as del ${o.del_id != null ? pad(o.del_id) : '?'}):
+      ${num(o.files_removed)} files / ${fmt(o.freed_apparent)} apparent / ${fmt(o.freed_disk)} on disk freed;
+      ${num(o.dirs_removed)} dirs removed, ${num(o.dirs_still_referenced)} still shared, ${num(o.dirs_missing)} already missing.
+      ${(o.warnings || []).length ? '<br>Warnings:<br>' + o.warnings.map(esc).join('<br>') : ''}</div>`;
+  } else {
+    out.innerHTML = `<div class="banner err">Delete failed: ${esc(j.error)}</div>`;
+  }
+}
+
+/* ---------- summary / overview ---------- */
+let summary = null;
+async function refreshSummary() {
+  try {
+    summary = await api('/api/summary');
+    $('#storePath').textContent = summary.store;
+    updateScanHeader(summary.scan);
+    if (!$('#tab-overview').hidden) renderOverview();
+  } catch (e) {
+    $('#scanStatus').textContent = 'summary failed: ' + e.message;
+  }
+}
+
+function renderOverview() {
+  if (!summary) return;
+  const sc = (liveState && liveState.scan.status === 'done') ? liveState.scan : summary.scan;
+  const done = sc.status === 'done';
+  const journals = summary.pending_journals || [];
+  $('#tab-overview').innerHTML = `
+    ${journals.length ? `<div class="banner err">Interrupted delete(s) pending for transaction(s)
+      ${journals.map(pad).join(', ')} — re-run the delete to finish.</div>` : ''}
+    <div class="cards">
+      <div class="card"><div class="k">Active transactions</div><div class="v">${num(summary.transactions_active)}</div>
+        <div class="sub">${num(summary.transactions_deleted)} deleted</div></div>
+      <div class="card"><div class="k">Indexed files</div><div class="v">${num(summary.entries)}</div>
+        <div class="sub">${num(summary.referenced_dirs)} hash dirs</div></div>
+      <div class="card"><div class="k">Apparent size</div><div class="v">${done ? fmt(sc.totals.apparent) : '…'}</div>
+        <div class="sub">payload ${done ? fmt(sc.payload.apparent) : '…'} · admin ${done ? fmt(sc.admin.apparent) : '…'}</div></div>
+      <div class="card"><div class="k">Size on disk</div><div class="v">${done ? fmt(sc.totals.disk) : '…'}</div>
+        <div class="sub">${done && sc.totals.apparent ? (100 * sc.totals.disk / sc.totals.apparent).toFixed(1) + '% of apparent' : ''}</div></div>
+      <div class="card"><div class="k">Last id</div><div class="v mono">${summary.lastid != null ? pad(summary.lastid) : '?'}</div>
+        <div class="sub">${num(summary.del_records)} del records</div></div>
+    </div>
+    <p class="muted" style="margin-top:16px">
+      <button class="btn" onclick="rescan()">Re-scan store</button>
+      ${done ? `scanned ${new Date(sc.scanned_at * 1000).toLocaleString()}` : ''}
+    </p>`;
+}
+async function rescan() { await api('/api/scan', {method:'POST'}); refreshSummary(); }
+
+/* ---------- transactions list ---------- */
+let txData = [], txHaveScan = false;
+const txState = { filter: '', status: 'live', sort: { key: 'id', dir: 1 } };
+const TX_NUMERIC = ['id', 'date', 'entries', 'apparent', 'disk', 'exclusive'];
+const txStatusOf = t =>
+  t.deleted_by.length ? 'deleted' : !t.active ? 'anomalous' : t.issues ? 'incomplete' : 'active';
+const txAccessors = {
+  id: t => t.id,
+  date: t => t.id, // ids are allocated chronologically
+  product: t => (t.record?.product ?? '').toLowerCase(),
+  version: t => (t.record?.version ?? '').toLowerCase(),
+  entries: t => t.entry_count,
+  apparent: t => t.sizes?.apparent ?? -1,
+  disk: t => t.sizes?.disk ?? -1,
+  exclusive: t => t.sizes?.exclusive_apparent ?? -1,
+  status: t => txStatusOf(t),
+};
+
+async function loadTransactions() {
+  const d = await api('/api/transactions');
+  txData = d.transactions;
+  txHaveScan = d.have_scan;
+  renderTxTable();
+}
+
+function statusPill(t) {
+  if (runningDeleteJob(t.id)) return '<span class="pill deleting">deleting…</span>';
+  const s = txStatusOf(t);
+  const title = s === 'incomplete'
+    ? `partial add: ${num(t.issues.claimed_stray_dirs)} stray dirs claim this tx, ${num(t.issues.missing_payloads)} payloads missing`
+    : '';
+  return `<span class="pill ${s}" title="${esc(title)}">${s}</span>`;
+}
+
+function renderTxTable() {
+  const q = txState.filter;
+  let rows = txData.filter(t => {
+    const s = txStatusOf(t);
+    if (txState.status === 'live' && (s === 'deleted' || s === 'anomalous')) return false;
+    if (['active', 'incomplete', 'deleted'].includes(txState.status) && s !== txState.status) return false;
+    if (q && !((t.record && (t.record.product + ' ' + t.record.version).toLowerCase().includes(q)) || t.id_str.includes(q))) return false;
+    return true;
+  });
+  rows = sorted(rows, txState.sort, txAccessors);
+  $('#txCount').textContent = `${rows.length} shown`;
+  const S = txState.sort;
+  $('#txTable').innerHTML = `
+    <table><thead><tr>
+      <th data-key="id">id${sortArrow(S,'id')}</th>
+      <th data-key="date">date${sortArrow(S,'date')}</th>
+      <th data-key="product">product${sortArrow(S,'product')}</th>
+      <th data-key="version">version${sortArrow(S,'version')}</th>
+      <th class="num" data-key="entries">entries${sortArrow(S,'entries')}</th>
+      <th class="num" data-key="apparent">apparent${sortArrow(S,'apparent')}</th>
+      <th class="num" data-key="disk">on disk${sortArrow(S,'disk')}</th>
+      <th class="num" data-key="exclusive" title="what deleting this transaction would free">exclusive${sortArrow(S,'exclusive')}</th>
+      <th data-key="status">status${sortArrow(S,'status')}</th>
+    </tr></thead><tbody>
+    ${rows.map(t => `<tr class="row" data-id="${t.id}">
+      <td class="mono"><a class="mono" href="#tx/${t.id}" onclick="event.stopPropagation()">${t.id_str}</a></td>
+      <td class="mono">${esc(t.record ? t.record.date : '')}</td>
+      <td>${esc(t.record ? t.record.product : '—')}</td>
+      <td class="mono">${esc(t.record ? t.record.version : '')}</td>
+      <td class="num">${num(t.entry_count)}</td>
+      <td class="num">${t.sizes ? fmt(t.sizes.apparent) : (txHaveScan ? '—' : '…')}</td>
+      <td class="num">${t.sizes ? fmt(t.sizes.disk) : (txHaveScan ? '—' : '…')}</td>
+      <td class="num">${t.sizes ? fmt(t.sizes.exclusive_apparent) : ''}</td>
+      <td>${statusPill(t)}</td>
+    </tr>`).join('')}
+    </tbody></table>`;
+  bindSort($('#txTable'), txState.sort, TX_NUMERIC, renderTxTable);
+  $('#txTable tbody').addEventListener('click', e => {
+    const tr = e.target.closest('tr.row'); if (tr) openTxFlyout(+tr.dataset.id);
+  });
+}
+$('#txFilter').addEventListener('input', e => { txState.filter = e.target.value.toLowerCase(); renderTxTable(); });
+$('#txStatusSel').addEventListener('change', e => { txState.status = e.target.value; renderTxTable(); });
+
+/* ---------- transaction detail (flyout + full page) ---------- */
+let currentTx = null; // { data, mode: 'flyout'|'page' }
+const entryState = { filter: 'all', rel: null, sort: { key: 'file', dir: 1 } };
+const ENTRY_NUMERIC = ['apparent', 'disk', 'shared'];
+const entryAccessors = {
+  file: e => (e.name + '/' + e.hash).toLowerCase(),
+  source: e => e.source.toLowerCase(),
+  apparent: e => e.apparent,
+  disk: e => e.disk,
+  shared: e => e.shared_with.length,
+};
+
+async function openTxFlyout(id) {
+  const el = $('#detail');
+  el.innerHTML = '<p class="muted">loading…</p>'; el.classList.add('open');
+  await renderTxDetail(id, el, 'flyout');
+}
+async function openTxPage(id) {
+  const el = $('#txPage');
+  el.innerHTML = '<p class="muted">loading…</p>';
+  await renderTxDetail(id, el, 'page');
+}
+function closeDetail() { $('#detail').classList.remove('open'); }
+
+async function renderTxDetail(id, container, mode) {
+  let t;
+  try { t = await api('/api/transactions/' + id); }
+  catch (e) { container.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
+  currentTx = { data: t, mode };
+  Object.assign(entryState, { filter: 'all', rel: null, sort: { key: 'file', dir: 1 } });
+  const r = t.record || {};
+  const totalA = t.entries.reduce((a, e) => a + e.apparent, 0);
+  const totalD = t.entries.reduce((a, e) => a + e.disk, 0);
+  const missing = t.entries.filter(e => !e.present).length;
+  const sharedCount = t.entries.filter(e => e.shared_with.length).length;
+  container.innerHTML = `
+    ${mode === 'flyout'
+      ? `<span style="float:right"><a class="btn" href="#tx/${t.id}">Open as page ↗</a>
+         <button class="btn" onclick="closeDetail()">✕</button></span>`
+      : ''}
+    <h2 class="mono">${t.id_str}</h2>
+    ${t.issues ? `<div class="banner warn">Incomplete transaction: ${num(t.issues.claimed_stray_dirs)}
+      stray hash dir(s) claim this transaction in refs.ptr without a manifest entry,
+      and ${num(t.issues.missing_payloads)} recorded payload(s) are missing on disk.
+      Likely an interrupted add — see the Strays tab.</div>` : ''}
+    <dl>
+      <dt>product</dt><dd>${esc(r.product ?? '—')}</dd>
+      <dt>version</dt><dd class="mono">${esc(r.version ?? '')}</dd>
+      <dt>added</dt><dd class="mono">${esc(r.date ?? '')} ${esc(r.time ?? '')}</dd>
+      ${r.comment ? `<dt>comment</dt><dd>${esc(r.comment)}</dd>` : ''}
+      <dt>status</dt><dd>${t.active ? (t.issues ? 'active, incomplete' : 'active')
+        : t.deleted_by.length ? 'deleted by ' + t.deleted_by.map(pad).join(', ')
+        : 'anomalous (' + esc(t.file_state) + ')'}</dd>
+      <dt>entries</dt><dd>${num(t.entries.length)} (${num(sharedCount)} shared with other transactions)${missing ? ` <span class="sev-error">${num(missing)} missing on disk!</span>` : ''}</dd>
+      <dt>size</dt><dd>${fmt(totalA)} apparent · ${fmt(totalD)} on disk <span class="muted">(shared dirs counted in full)</span></dd>
+    </dl>
+    ${t.active ? `<p>
+      <button class="btn" onclick="delTx(${t.id}, true)">Dry-run delete</button>
+      <button class="btn danger" onclick="delTx(${t.id}, false)">Delete transaction…</button>
+    </p><div id="delOut"></div>` : ''}
+    ${t.sharing.length ? `
+      <h3>Shares files with</h3>
+      <table><thead><tr><th>transaction</th><th>product</th><th>date</th>
+        <th class="num">shared entries</th><th></th></tr></thead><tbody>
+      ${t.sharing.map(s => `<tr>
+        <td class="mono"><a href="#tx/${s.tx}">${s.id_str}</a></td>
+        <td>${esc(s.product ?? '?')} <span class="muted mono">${esc(s.version ?? '')}</span></td>
+        <td class="mono">${esc(s.date ?? '')}</td>
+        <td class="num">${num(s.shared_entries)} / ${num(t.entries.length)}</td>
+        <td><button class="btn" data-rel="with" data-tx="${s.tx}">∩ shared</button>
+            <button class="btn" data-rel="without" data-tx="${s.tx}">∖ not shared</button></td>
+      </tr>`).join('')}
+      </tbody></table>` : ''}
+    <h3>Entries</h3>
+    <div class="toolbar">
+      <select id="entryFilterSel">
+        <option value="all">all entries</option>
+        <option value="exclusive">exclusive only (freed if deleted)</option>
+        <option value="shared">shared only (kept if deleted)</option>
+        <option value="missing">missing only</option>
+      </select>
+      <span id="relChip"></span>
+      <span class="muted" id="entryCount"></span>
+    </div>
+    <div id="entriesWrap"></div>`;
+  $('#entryFilterSel', container).addEventListener('change', e => {
+    entryState.filter = e.target.value;
+    renderEntries(container);
+  });
+  container.querySelectorAll('button[data-rel]').forEach(b =>
+    b.addEventListener('click', () => {
+      entryState.rel = { tx: +b.dataset.tx, mode: b.dataset.rel };
+      renderEntries(container);
+    }));
+  renderEntries(container);
+}
+
+function renderEntries(container) {
+  if (!currentTx) return;
+  const { data: t, mode } = currentTx;
+  let entries = t.entries.filter(e =>
+    entryState.filter === 'all' ? true :
+    entryState.filter === 'exclusive' ? e.shared_with.length === 0 :
+    entryState.filter === 'shared' ? e.shared_with.length > 0 :
+    !e.present);
+  if (entryState.rel) {
+    const { tx, mode: m } = entryState.rel;
+    entries = entries.filter(e => e.shared_with.includes(tx) === (m === 'with'));
+  }
+  entries = sorted(entries, entryState.sort, entryAccessors);
+  $('#entryCount', container).textContent = `${entries.length} of ${t.entries.length}`;
+  $('#relChip', container).innerHTML = entryState.rel
+    ? `<span class="chip">${entryState.rel.mode === 'with' ? 'shared with' : 'not shared with'}
+       ${pad(entryState.rel.tx)} <button title="clear" onclick="clearRel()">✕</button></span>`
+    : '';
+  const S = entryState.sort;
+  const page = mode === 'page';
+  $('#entriesWrap', container).innerHTML = `
+    <table><thead><tr>
+      <th data-key="file">file${sortArrow(S,'file')}</th>
+      ${page ? `<th data-key="source">source${sortArrow(S,'source')}</th>` : ''}
+      <th class="num" data-key="apparent">apparent${sortArrow(S,'apparent')}</th>
+      <th class="num" data-key="disk">on disk${sortArrow(S,'disk')}</th>
+      <th class="num" data-key="shared">shared${sortArrow(S,'shared')}</th>
+    </tr></thead><tbody>
+    ${entries.map(e => `<tr>
+      <td class="mono break">${esc(e.name)}/${esc(e.hash)}${e.present ? '' : ' <span class="sev-error">[missing]</span>'}
+        ${page ? '' : `<br><span class="muted break">${esc(e.source)}</span>`}</td>
+      ${page ? `<td class="mono muted break">${esc(e.source)}</td>` : ''}
+      <td class="num">${fmt(e.apparent)}</td><td class="num">${fmt(e.disk)}</td>
+      <td class="num" title="${e.shared_with.map(pad).join(', ')}">${e.shared_with.length ? e.shared_with.length : ''}</td>
+    </tr>`).join('')}
+    </tbody></table>`;
+  bindSort($('#entriesWrap', container), entryState.sort, ENTRY_NUMERIC, () => renderEntries(container));
+}
+function clearRel() {
+  entryState.rel = null;
+  const container = currentTx.mode === 'flyout' ? $('#detail') : $('#txPage');
+  renderEntries(container);
+}
+
+async function delTx(id, dryRun) {
+  const idStr = pad(id);
+  if (!dryRun) {
+    const typed = prompt(`This permanently deletes transaction ${idStr} from the store\n(files whose last reference this is will be removed).\n\nType the transaction id to confirm:`);
+    if (typed === null) return;
+    if (typed.trim() !== idStr && typed.trim() !== String(id)) { alert('id mismatch; not deleting'); return; }
+  }
+  const out = $('#delOut'); out.innerHTML = '<p class="muted">working…</p>';
+  try {
+    const r = await api(`/api/transactions/${id}?dry_run=${dryRun}`, {method: 'DELETE'});
+    if (dryRun) {
+      out.innerHTML = `<div class="banner ok">Dry run — nothing changed:
+        ${num(r.files_removed)} files / ${fmt(r.freed_apparent)} apparent / ${fmt(r.freed_disk)} on disk would be freed;
+        ${num(r.dirs_removed)} dirs removed, ${num(r.dirs_still_referenced)} still shared, ${num(r.dirs_missing)} already missing.
+        ${r.warnings.length ? '<br>Warnings:<br>' + r.warnings.map(esc).join('<br>') : ''}</div>`;
+    } else {
+      // Background job started; live progress arrives over SSE (patchDelOut).
+      out.innerHTML = `<div class="banner info">Delete started as background job #${r.job} —
+        it keeps running even if you leave this page.</div>`;
+    }
+  } catch (e) { out.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+}
+
+/* ---------- search ---------- */
+let searchHits = [];
+const searchState = { sort: { key: 'name', dir: 1 } };
+const searchAccessors = {
+  name: h => h.name.toLowerCase(),
+  hash: h => h.hash.toLowerCase(),
+  tx: h => h.tx,
+  product: h => ((h.product ?? '') + ' ' + (h.version ?? '')).toLowerCase(),
+  source: h => h.source.toLowerCase(),
+};
+let searchTimer = null;
+$('#searchBox').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(doSearch, 250);
+});
+async function doSearch() {
+  const q = $('#searchBox').value.trim();
+  if (q.length < 2) { $('#searchResults').innerHTML = ''; $('#searchInfo').textContent = ''; return; }
+  const d = await api('/api/search?q=' + encodeURIComponent(q));
+  searchHits = d.hits;
+  $('#searchInfo').textContent = d.hits.length + (d.limited ? '+ results (truncated)' : ' results');
+  renderSearch();
+}
+function renderSearch() {
+  const S = searchState.sort;
+  const hits = sorted(searchHits, S, searchAccessors);
+  $('#searchResults').innerHTML = `
+    <table><thead><tr>
+      <th data-key="name">file${sortArrow(S,'name')}</th>
+      <th data-key="hash">hash${sortArrow(S,'hash')}</th>
+      <th data-key="tx">transaction${sortArrow(S,'tx')}</th>
+      <th data-key="product">product${sortArrow(S,'product')}</th>
+      <th data-key="source">source${sortArrow(S,'source')}</th>
+    </tr></thead><tbody>
+    ${hits.map(h => `<tr class="row" data-id="${h.tx}">
+      <td class="mono">${esc(h.name)}</td><td class="mono break">${esc(h.hash)}</td>
+      <td class="mono"><a href="#tx/${h.tx}" onclick="event.stopPropagation()">${pad(h.tx)}</a></td>
+      <td>${esc(h.product ?? '')} <span class="muted mono">${esc(h.version ?? '')}</span></td>
+      <td class="muted mono break">${esc(h.source)}</td></tr>`).join('')}
+    </tbody></table>`;
+  bindSort($('#searchResults'), S, ['tx'], renderSearch);
+  $('#searchResults tbody').addEventListener('click', e => {
+    const tr = e.target.closest('tr.row'); if (tr) openTxFlyout(+tr.dataset.id);
+  });
+}
+
+/* ---------- strays ---------- */
+let straysData = null, straysWaiting = false;
+const straysState = { sort: { key: 'size', dir: -1 } };
+const STRAYS_NUMERIC = ['size', 'disk'];
+const straysAccessors = {
+  rel_path: s => s.rel_path.toLowerCase(),
+  kind: s => s.kind,
+  size: s => s.size,
+  disk: s => s.disk,
+  detail: s => s.detail,
+};
+function updateStraysWaiting(sc) {
+  const el = $('#straysWait');
+  if (el) el.textContent = sc.status === 'running'
+    ? `Scan in progress — ${num(sc.files)} files scanned so far. Strays will appear automatically when it finishes.`
+    : 'Waiting for a scan to start…';
+}
+async function loadStrays() {
+  $('#straysTop').innerHTML = '<p class="muted">loading…</p>';
+  $('#straysTable').innerHTML = '';
+  try { straysData = (await api('/api/strays')).strays; straysWaiting = false; }
+  catch (e) {
+    if (e.status === 503) {
+      straysWaiting = true;
+      $('#straysTop').innerHTML = '<div class="banner info" id="straysWait">Waiting for scan…</div>';
+      if (liveState) updateStraysWaiting(liveState.scan);
+    } else {
+      $('#straysTop').innerHTML = `<div class="banner err">${esc(e.message)}</div>`;
+    }
+    return;
+  }
+  const s = straysData;
+  if (!s.strays.length && !s.missing.length) {
+    $('#straysTop').innerHTML = '<div class="banner ok">Store is clean: every file on disk is accounted for by an active transaction.</div>';
+    return;
+  }
+  $('#straysTop').innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="k">Stray files</div><div class="v">${num(s.totals.files)}</div>
+        <div class="sub">${num(s.totals.unreferenced_dirs)} unreferenced hash dirs</div></div>
+      <div class="card"><div class="k">Stray apparent</div><div class="v">${fmt(s.totals.apparent)}</div></div>
+      <div class="card"><div class="k">Stray on disk</div><div class="v">${fmt(s.totals.disk)}</div></div>
+      <div class="card"><div class="k">Missing payloads</div><div class="v ${s.missing.length ? 'sev-error' : ''}">${num(s.missing.length)}</div></div>
+    </div>
+    <div class="toolbar" style="margin-top:14px">
+      <button class="btn" onclick="pruneAll(true)">Dry-run prune</button>
+      <button class="btn danger" onclick="pruneAll(false)">Prune all strays…</button>
+      <span id="pruneOut"></span>
+    </div>
+    ${s.missing.length ? `<h3>Missing payloads (integrity problems, not strays — never pruned)</h3>
+      <table><thead><tr><th>dir</th><th>transaction</th><th>problem</th></tr></thead><tbody>
+      ${s.missing.map(m => `<tr><td class="mono break">${esc(m.name)}/${esc(m.hash)}</td>
+        <td class="mono"><a href="#tx/${m.tx}">${pad(m.tx)}</a></td>
+        <td>${m.dir_missing ? 'directory absent' : 'directory present but no payload file'}</td></tr>`).join('')}
+      </tbody></table>` : ''}
+    <h3>Strays</h3>`;
+  renderStraysTable();
+}
+function renderStraysTable() {
+  const S = straysState.sort;
+  const rows = sorted(straysData.strays, S, straysAccessors);
+  $('#straysTable').innerHTML = `
+    <table><thead><tr>
+      <th data-key="rel_path">path${sortArrow(S,'rel_path')}</th>
+      <th data-key="kind">kind${sortArrow(S,'kind')}</th>
+      <th class="num" data-key="size">apparent${sortArrow(S,'size')}</th>
+      <th class="num" data-key="disk">on disk${sortArrow(S,'disk')}</th>
+      <th data-key="detail">detail${sortArrow(S,'detail')}</th>
+    </tr></thead><tbody>
+    ${rows.slice(0, 2000).map(x => `<tr>
+      <td class="mono break">${esc(x.rel_path)}</td><td>${esc(x.kind)}</td>
+      <td class="num">${fmt(x.size)}</td><td class="num">${fmt(x.disk)}</td>
+      <td class="muted">${esc(x.detail)}</td></tr>`).join('')}
+    </tbody></table>
+    ${rows.length > 2000 ? `<p class="muted">…showing 2000 of ${num(rows.length)}</p>` : ''}`;
+  bindSort($('#straysTable'), S, STRAYS_NUMERIC, renderStraysTable);
+}
+async function pruneAll(dryRun) {
+  if (!dryRun && !confirm('Permanently delete ALL stray files listed? Indexed payloads are never touched.')) return;
+  const out = $('#pruneOut'); out.innerHTML = '<span class="muted">working…</span>';
+  try {
+    const r = await api('/api/strays/prune', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({all: true, dry_run: dryRun}),
+    });
+    if (dryRun) {
+      out.innerHTML = `<span class="muted">would remove ${num(r.files_removed)} files
+        (${fmt(r.freed_apparent)}), ${num(r.dirs_removed)} dirs${r.skipped.length ? ', skipped ' + r.skipped.length : ''}</span>`;
+    } else {
+      // Progress streams into the jobs panel; the table refreshes on completion.
+      out.innerHTML = `<span class="muted">prune running as background job #${r.job} — see progress in the corner</span>`;
+    }
+  } catch (e) { out.innerHTML = `<span class="sev-error">${esc(e.message)}</span>`; }
+}
+
+/* ---------- check ---------- */
+async function loadCheck() {
+  const el = $('#tab-check');
+  el.innerHTML = '<p class="muted">running checks…</p>';
+  const d = await api('/api/check');
+  const rows = [...d.admin, ...(d.deep || [])];
+  const missing = d.missing_payloads || [];
+  if (!rows.length && !missing.length) {
+    el.innerHTML = `<div class="banner ok">No problems found${d.deep ? ' (admin records + deep refs.ptr check)' : ' in admin records (deep results appear when the scan finishes)'}.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    ${d.deep ? '' : '<p class="muted">Deep refs.ptr checks pending — scan still running.</p>'}
+    <table><thead><tr><th>severity</th><th>code</th><th>subject</th><th>message</th></tr></thead><tbody>
+    ${rows.map(f => `<tr><td class="sev-${esc(f.severity)}">${esc(f.severity)}</td>
+      <td class="mono">${esc(f.code)}</td><td class="mono break">${esc(f.subject)}</td><td>${esc(f.message)}</td></tr>`).join('')}
+    ${missing.map(m => `<tr><td class="sev-error">error</td><td class="mono">missing-payload</td>
+      <td class="mono break">${esc(m.name)}/${esc(m.hash)}</td>
+      <td>recorded by tx <a href="#tx/${m.tx}" class="mono">${pad(m.tx)}</a> but not on disk</td></tr>`).join('')}
+    </tbody></table>`;
+}
+
+refreshSummary();
+route();
+</script>
+</body>
+</html>
