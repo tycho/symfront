@@ -72,6 +72,7 @@ fn fixture() -> Fixture {
     )
     .unwrap();
     fs::write(admin.join("lastid.txt"), "0000000002").unwrap();
+    fs::write(root.join("pingme.txt"), b"").unwrap();
 
     // Strays.
     let orphan = root.join("orphan.exe").join("DEAD0001");
@@ -270,6 +271,15 @@ fn checks_clean_store_then_break_it() {
     assert!(codes.contains(&"manifest-missing"), "{codes:?}");
     // lastid (2) is now behind the del record id (3).
     assert!(codes.contains(&"lastid-behind"), "{codes:?}");
+}
+
+#[test]
+fn missing_pingme_is_flagged() {
+    let f = fixture();
+    fs::remove_file(f.root.join("pingme.txt")).unwrap();
+    let (store, index) = load(&f.root);
+    let findings = check::check_admin(&store, &index).unwrap();
+    assert!(findings.iter().any(|x| x.code == "pingme-missing"));
 }
 
 #[test]

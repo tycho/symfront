@@ -235,6 +235,11 @@ fn spawn_admin_watcher(state: App) -> anyhow::Result<notify::RecommendedWatcher>
     let mut watcher =
         notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             let Ok(ev) = res else { return };
+            // Reads don't change anything — and our own index reloads/scans
+            // read these files, so reacting to Access events would loop.
+            if matches!(ev.kind, notify::EventKind::Access(_)) {
+                return;
+            }
             // Ignore our own scratch files (lock, temp rewrites, journals).
             let only_ours = !ev.paths.is_empty()
                 && ev.paths.iter().all(|p| {

@@ -37,6 +37,17 @@ fn finding(severity: Severity, code: &'static str, subject: impl Into<String>, m
 pub fn check_admin(store: &Store, index: &StoreIndex) -> Result<Vec<Finding>> {
     let mut out = Vec::new();
 
+    // Some HTTP symbol clients (e.g. Ghidra) probe for pingme.txt and treat
+    // the whole server as down when it's absent.
+    if !store.root().join("pingme.txt").is_file() {
+        out.push(finding(
+            Severity::Warning,
+            "pingme-missing",
+            "pingme.txt",
+            "store root has no pingme.txt; some clients (e.g. Ghidra) declare an HTTP symbol server down without it — create an empty pingme.txt",
+        ));
+    }
+
     for j in ops::pending_journals(store)? {
         out.push(finding(
             Severity::Error,
