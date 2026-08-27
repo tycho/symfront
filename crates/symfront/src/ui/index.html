@@ -50,10 +50,12 @@
   .pill.anomalous, .pill.incomplete { background: #33290f; color: var(--warn); }
   .pill.deleting { background: #142a3d; color: var(--accent); }
   .toolbar { display: flex; gap: 10px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
-  input[type=text], select { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
-                     border-radius: 6px; padding: 8px 12px; font-size: 14px; }
+  input[type=text], input[type=password], select {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; font-size: 14px; }
   input[type=text] { width: 340px; }
-  input[type=text]:focus, select:focus { outline: none; border-color: var(--accent); }
+  input[type=text]:focus, input[type=password]:focus, select:focus {
+    outline: none; border-color: var(--accent); }
   button.btn { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
                border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
   button.btn:hover { border-color: var(--accent); }
@@ -93,6 +95,7 @@
   .job .bar div { height: 100%; background: var(--accent); }
   #login { position: fixed; inset: 0; background: rgba(10, 13, 16, .88); z-index: 50;
            display: flex; align-items: center; justify-content: center; }
+  #login[hidden] { display: none; }
   #login form { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
                 padding: 28px 32px; width: 320px; display: flex; flex-direction: column; gap: 10px; }
   #login h2 { margin: 0 0 6px; font-size: 18px; }
