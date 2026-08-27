@@ -429,3 +429,28 @@ fn add_transaction_roundtrip() {
     let report = strays::analyze(&index, &scan).strays;
     assert!(report.strays.is_empty() && report.missing.is_empty());
 }
+
+/// PDB age must come from the DBI stream when it disagrees with the info
+/// stream — debuggers request the RSDS age from the PE, which matches DBI.
+/// Ground truth: RSDS records inside the paired DLLs in ~/testcases.
+#[test]
+fn pdb_age_uses_dbi_stream() {
+    let dir = Path::new("/home/steven/testcases");
+    if !dir.is_dir() {
+        return;
+    }
+    let cases = [
+        // (file, expected hash from the paired DLL's RSDS record)
+        ("Microsoft.ConfigCI.Commands.pdb", "57D8363310B240CCBC9CE9D78163C38D1"),
+        ("Microsoft.Data.Entity.Build.Tasks.pdb", "F002579388CE46038E78A8AAB55AEAEE1"),
+    ];
+    for (name, expect) in cases {
+        let path = dir.join(name);
+        if !path.is_file() {
+            continue;
+        }
+        let (kind, hash) = symfront_core::ident::identify(&path).unwrap().unwrap();
+        assert_eq!(kind, symfront_core::ident::FileKind::Pdb);
+        assert_eq!(hash, expect, "{name}");
+    }
+}

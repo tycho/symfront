@@ -160,21 +160,41 @@ fn pdb_hash(f: &mut File) -> std::io::Result<Option<String>> {
     if size_of(1) < 28 {
         return Ok(None);
     }
-    // Skip stream 0's block list to reach stream 1's.
-    let mut idx = 4 + num_streams * 4 + (size_of(0).div_ceil(block_size) * 4) as usize;
-    if directory.len() < idx + 4 {
+    // First block of stream `i`: skip the block lists of streams before it.
+    // Headers fit in a stream's first block (block_size >= 512).
+    let first_block_of = |i: usize| -> Option<u64> {
+        let mut idx = 4 + num_streams * 4;
+        for j in 0..i {
+            idx += (size_of(j).div_ceil(block_size) * 4) as usize;
+        }
+        if directory.len() < idx + 4 {
+            None
+        } else {
+            Some(u32le(&directory[idx..]) as u64)
+        }
+    };
+    // PDB info stream (1) header: Version, Signature, Age, Guid[16].
+    let Some(info_block) = first_block_of(1) else {
         return Ok(None);
-    }
-    let first_block = u32le(&directory[idx..]) as u64;
-    idx += 0; // stream 1 header fits in its first block (block_size >= 512)
-    let _ = idx;
-    // PDB info stream header: Version, Signature, Age, Guid[16].
+    };
     let mut info = [0u8; 28];
-    if !read_exact_at(f, first_block * block_size, &mut info)? {
+    if !read_exact_at(f, info_block * block_size, &mut info)? {
         return Ok(None);
     }
-    let age = u32le(&info[8..12]);
+    let mut age = u32le(&info[8..12]);
     let g = &info[12..28];
+    // The symbol-server key uses the DBI stream's age when the DBI stream is
+    // present (SSQP convention): post-link tools bump the PDB info stream's
+    // age, but debuggers request the age recorded in the PE's RSDS record,
+    // which matches DBI.
+    if num_streams > 3 && size_of(3) >= 12 {
+        if let Some(dbi_block) = first_block_of(3) {
+            let mut dbi = [0u8; 12];
+            if read_exact_at(f, dbi_block * block_size, &mut dbi)? {
+                age = u32le(&dbi[8..12]);
+            }
+        }
+    }
     let guid = format!(
         "{:08X}{:04X}{:04X}{}",
         u32le(&g[0..4]),
