@@ -34,8 +34,33 @@ use crate::web::{spawn_add_job, App, ApiError};
 
 type ApiResult<T> = std::result::Result<T, ApiError>;
 
-const SESSION_TTL: Duration = Duration::from_secs(2 * 3600);
+/// Sessions expire after this much *inactivity* (any check/upload/status call
+/// refreshes the clock), so an interrupted upload can be resumed later — but
+/// abandoned staging doesn't accumulate forever.
+const INACTIVITY_TTL: Duration = Duration::from_secs(24 * 3600);
 pub(crate) const STAGING_DIR: &str = "_symfront_staging";
+const META_FILE: &str = "meta.json";
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct MetaEntry {
+    file: String,
+    name: String,
+    hash: String,
+    kind: FileKind,
+}
+
+/// Session metadata persisted into the staging dir, so partially-uploaded
+/// sessions survive a server restart.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct Meta {
+    product: String,
+    #[serde(default)]
+    version: String,
+    #[serde(default)]
+    comment: String,
+    #[serde(default)]
+    files: Vec<MetaEntry>,
+}
 
 pub(crate) struct UploadSession {
     pub dir: PathBuf,
@@ -44,8 +69,29 @@ pub(crate) struct UploadSession {
     pub comment: String,
     /// Staged files keyed by lower-cased (name, hash).
     pub staged: HashMap<(String, String), (PathBuf, FileKind)>,
+    /// Same content with original casing, for meta.json persistence.
+    records: Vec<MetaEntry>,
     pub counter: u64,
-    pub created: Instant,
+    pub last_activity: Instant,
+}
+
+impl UploadSession {
+    fn write_meta(&self) {
+        let meta = Meta {
+            product: self.product.clone(),
+            version: self.version.clone(),
+            comment: self.comment.clone(),
+            files: self.records.clone(),
+        };
+        let tmp = self.dir.join(".meta.tmp");
+        if serde_json::to_vec(&meta)
+            .ok()
+            .and_then(|b| std::fs::write(&tmp, b).ok())
+            .is_some()
+        {
+            let _ = std::fs::rename(&tmp, self.dir.join(META_FILE));
+        }
+    }
 }
 
 fn err(code: StatusCode, msg: impl Into<String>) -> ApiError {
@@ -59,17 +105,17 @@ fn random_id() -> String {
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn prune_stale(state: &App) {
+pub(crate) fn prune_stale(state: &App) {
     let mut uploads = state.uploads.lock().unwrap();
     let stale: Vec<String> = uploads
         .iter()
-        .filter(|(_, s)| s.created.elapsed() > SESSION_TTL)
+        .filter(|(_, s)| s.last_activity.elapsed() > INACTIVITY_TTL)
         .map(|(k, _)| k.clone())
         .collect();
     for k in stale {
         if let Some(s) = uploads.remove(&k) {
             let _ = std::fs::remove_dir_all(&s.dir);
-            tracing::info!("expired stale upload session {k}");
+            tracing::info!("expired inactive upload session {k}");
         }
     }
 }
@@ -100,18 +146,18 @@ pub(crate) async fn begin(
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    state.uploads.lock().unwrap().insert(
-        id.clone(),
-        UploadSession {
-            dir,
-            product: req.product,
-            version: req.version,
-            comment: req.comment,
-            staged: HashMap::new(),
-            counter: 0,
-            created: Instant::now(),
-        },
-    );
+    let session = UploadSession {
+        dir,
+        product: req.product,
+        version: req.version,
+        comment: req.comment,
+        staged: HashMap::new(),
+        records: Vec::new(),
+        counter: 0,
+        last_activity: Instant::now(),
+    };
+    session.write_meta();
+    state.uploads.lock().unwrap().insert(id.clone(), session);
     Ok(Json(json!({ "upload_id": id })))
 }
 
@@ -132,9 +178,21 @@ pub(crate) async fn check(
     AxPath(id): AxPath<String>,
     Json(req): Json<CheckRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    if !state.uploads.lock().unwrap().contains_key(&id) {
-        return Err(err(StatusCode::NOT_FOUND, "unknown upload session"));
-    }
+    let staged: Vec<bool> = {
+        let mut uploads = state.uploads.lock().unwrap();
+        let session = uploads
+            .get_mut(&id)
+            .ok_or_else(|| err(StatusCode::NOT_FOUND, "unknown upload session"))?;
+        session.last_activity = Instant::now();
+        req.files
+            .iter()
+            .map(|f| {
+                session
+                    .staged
+                    .contains_key(&(f.name.to_lowercase(), f.hash.to_lowercase()))
+            })
+            .collect()
+    };
     let store = state.store.clone();
     let present = tokio::task::spawn_blocking(move || {
         req.files
@@ -144,7 +202,7 @@ pub(crate) async fn check(
     })
     .await
     .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json!({ "present": present })))
+    Ok(Json(json!({ "present": present, "staged": staged })))
 }
 
 /// Case-insensitive lookup of an existing payload file.
@@ -188,6 +246,7 @@ pub(crate) async fn upload_file(
         let session = uploads
             .get_mut(&id)
             .ok_or_else(|| err(StatusCode::NOT_FOUND, "unknown upload session"))?;
+        session.last_activity = Instant::now();
         session.counter += 1;
         session.dir.join(format!("f{:04}", session.counter))
     };
@@ -250,10 +309,21 @@ pub(crate) async fn upload_file(
     let session = uploads
         .get_mut(&id)
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "upload session vanished"))?;
+    session.last_activity = Instant::now();
+    session.records.push(MetaEntry {
+        file: staged_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        name: params.name.clone(),
+        hash: hash.clone(),
+        kind,
+    });
     session.staged.insert(
         (params.name.to_lowercase(), hash.to_lowercase()),
         (staged_path, kind),
     );
+    session.write_meta();
     let _ = params.source; // recorded at commit time
     Ok(Json(json!({
         "name": params.name,
@@ -366,16 +436,91 @@ pub(crate) async fn job_status(
     }
 }
 
-/// Recovery helper: staging left behind by a crashed server.
-pub(crate) fn cleanup_stale_staging(store: &symfront_core::Store) {
-    let staging = store.admin_dir().join(STAGING_DIR);
-    if let Ok(rd) = std::fs::read_dir(&staging) {
-        for ent in rd.flatten() {
-            tracing::warn!(
-                "removing leftover upload staging {}",
-                ent.path().display()
-            );
-            let _ = std::fs::remove_dir_all(ent.path());
+/// Session status, for the web UI's "resume previous upload" banner.
+pub(crate) async fn session_status(
+    State(state): State<App>,
+    AxPath(id): AxPath<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut uploads = state.uploads.lock().unwrap();
+    let session = uploads
+        .get_mut(&id)
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "unknown upload session"))?;
+    session.last_activity = Instant::now();
+    Ok(Json(json!({
+        "upload_id": id,
+        "product": session.product,
+        "version": session.version,
+        "comment": session.comment,
+        "staged": session
+            .records
+            .iter()
+            .map(|r| json!({ "name": r.name, "hash": r.hash }))
+            .collect::<Vec<_>>(),
+    })))
+}
+
+/// Startup: rebuild upload sessions from staging metadata (so interrupted
+/// uploads survive a server restart), discarding anything expired or
+/// unreadable.
+pub(crate) fn restore_staging_sessions(state: &App) {
+    let staging = state.store.admin_dir().join(STAGING_DIR);
+    let Ok(rd) = std::fs::read_dir(&staging) else {
+        return;
+    };
+    for ent in rd.flatten() {
+        let dir = ent.path();
+        let id = ent.file_name().to_string_lossy().into_owned();
+        let meta_path = dir.join(META_FILE);
+        let restored = (|| -> Option<UploadSession> {
+            let md = std::fs::metadata(&meta_path).ok()?;
+            let age = md.modified().ok()?.elapsed().ok()?;
+            if age > INACTIVITY_TTL {
+                return None;
+            }
+            let meta: Meta = serde_json::from_slice(&std::fs::read(&meta_path).ok()?).ok()?;
+            let mut staged = HashMap::new();
+            let mut counter = 0u64;
+            let mut records = Vec::new();
+            for r in &meta.files {
+                let path = dir.join(&r.file);
+                if !path.is_file() {
+                    continue; // partial write of this entry; client re-uploads
+                }
+                if let Some(n) = r.file.strip_prefix('f').and_then(|n| n.parse::<u64>().ok()) {
+                    counter = counter.max(n);
+                }
+                staged.insert(
+                    (r.name.to_lowercase(), r.hash.to_lowercase()),
+                    (path, r.kind),
+                );
+                records.push(r.clone());
+            }
+            Some(UploadSession {
+                dir: dir.clone(),
+                product: meta.product,
+                version: meta.version,
+                comment: meta.comment,
+                staged,
+                records,
+                counter,
+                last_activity: Instant::now()
+                    .checked_sub(age)
+                    .unwrap_or_else(Instant::now),
+            })
+        })();
+        match restored {
+            Some(s) => {
+                tracing::info!(
+                    "restored upload session {id} ({} staged file(s), product {:?})",
+                    s.staged.len(),
+                    s.product
+                );
+                state.uploads.lock().unwrap().insert(id, s);
+            }
+            None => {
+                tracing::info!("removing expired/unreadable upload staging {}", dir.display());
+                let _ = std::fs::remove_dir_all(&dir);
+            }
         }
     }
 }

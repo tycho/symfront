@@ -178,6 +178,7 @@
       <input type="text" id="upVersion" placeholder="version" style="width:180px">
       <input type="text" id="upComment" placeholder="comment" style="width:240px">
     </div>
+    <div id="upResume"></div>
     <div class="drop" id="dropZone">
       Drop files or folders here, or
       <label class="btn">pick files<input type="file" id="upFiles" multiple hidden></label>
@@ -343,7 +344,8 @@ function route() {
   closeDetail();
   if (txMatch) openTxPage(+txMatch[1]);
   else ({overview: renderOverview, transactions: loadTransactions, strays: loadStrays,
-         check: loadCheck, account: loadAccount, admin: loadAdmin}[tab] || (()=>{}))();
+         check: loadCheck, account: loadAccount, admin: loadAdmin,
+         upload: checkUploadResume}[tab] || (()=>{}))();
 }
 window.addEventListener('hashchange', route);
 
@@ -1004,8 +1006,12 @@ let upBusy = false;
 
 async function addUploadFiles(files) {
   const seen = new Set(upQueue.map(f => f.name.toLowerCase() + '\\' + f.hash.toLowerCase()));
-  let skipped = 0;
+  let skipped = 0, examined = 0;
   for (const file of files) {
+    if (++examined % 200 === 0) {
+      $('#upOut').textContent = `identifying… ${examined}/${files.length}`;
+      await new Promise(r => setTimeout(r)); // let the UI breathe on huge drops
+    }
     const id = await identifyFile(file).catch(() => null);
     if (!id) { skipped++; continue; }
     const key = file.name.toLowerCase() + '\\' + id.hash.toLowerCase();
@@ -1013,7 +1019,7 @@ async function addUploadFiles(files) {
     seen.add(key);
     upQueue.push({ file, name: file.name, hash: id.hash, kind: id.kind, status: 'ready', pct: null });
   }
-  if (skipped) $('#upOut').textContent = `${skipped} file(s) skipped (not PE/PDB)`;
+  $('#upOut').textContent = skipped ? `${skipped} file(s) skipped (not PE/PDB)` : '';
   renderUpQueue();
 }
 
@@ -1031,6 +1037,13 @@ function renderUpQueue() {
       <td>${esc(f.status)}${f.pct != null ? ` <span class="pct">${f.pct}%</span>` : ''}</td>
     </tr>`).join('')}
     </tbody></table>`;
+}
+
+function patchUpRow(i) {
+  const row = $('#upList tbody')?.rows[i];
+  if (!row) return;
+  const f = upQueue[i];
+  row.cells[4].innerHTML = `${esc(f.status)}${f.pct != null ? ` <span class="pct">${f.pct}%</span>` : ''}`;
 }
 
 function xhrUpload(url, file, onProgress) {
@@ -1059,25 +1072,48 @@ async function startWebUpload() {
   const out = $('#upOut');
   try {
     out.textContent = 'starting…';
-    const begin = await post('api/upload/begin', {
-      product, version: $('#upVersion').value, comment: $('#upComment').value,
-    });
-    const uid = begin.upload_id;
+    let uid = upResumeId;
+    if (!uid) {
+      const begin = await post('api/upload/begin', {
+        product, version: $('#upVersion').value, comment: $('#upComment').value,
+      });
+      uid = begin.upload_id;
+    }
+    // Remember the session so an interrupted upload can be resumed later.
+    localStorage.setItem('symfront_pending_upload', JSON.stringify({ id: uid }));
     const check = await post(`api/upload/${uid}/check`, {
       files: upQueue.map(f => ({ name: f.name, hash: f.hash })),
     });
-    for (let i = 0; i < upQueue.length; i++) {
-      const f = upQueue[i];
-      if (check.present[i]) { f.status = 'already in store'; renderUpQueue(); continue; }
-      f.status = 'uploading'; f.pct = 0; renderUpQueue();
-      const q = `name=${encodeURIComponent(f.name)}&hash=${encodeURIComponent(f.hash)}&source=${encodeURIComponent(f.file.webkitRelativePath || f.name)}`;
-      await xhrUpload(`api/upload/${uid}/file?${q}`, f.file, pct => {
-        f.pct = pct;
-        const row = $('#upList tbody')?.rows[i];
-        if (row) row.cells[4].innerHTML = `uploading <span class="pct">${pct}%</span>`;
-      });
-      f.status = 'uploaded'; f.pct = null; renderUpQueue();
-    }
+    const todo = [];
+    upQueue.forEach((f, i) => {
+      if (check.present[i]) f.status = 'already in store';
+      else if (check.staged && check.staged[i]) f.status = 'staged (resumed)';
+      else todo.push(i);
+    });
+    renderUpQueue();
+    // A few parallel streams fill fast LANs far better than one.
+    let nextIdx = 0, uploadedCount = 0, aborted = false;
+    const worker = async () => {
+      for (;;) {
+        if (aborted) return;
+        const k = nextIdx++;
+        if (k >= todo.length) return;
+        const i = todo[k];
+        const f = upQueue[i];
+        f.status = 'uploading'; f.pct = 0; patchUpRow(i);
+        const q = `name=${encodeURIComponent(f.name)}&hash=${encodeURIComponent(f.hash)}&source=${encodeURIComponent(f.file.webkitRelativePath || f.name)}`;
+        try {
+          await xhrUpload(`api/upload/${uid}/file?${q}`, f.file, pct => { f.pct = pct; patchUpRow(i); });
+        } catch (e) {
+          aborted = true;
+          f.status = 'failed'; f.pct = null; patchUpRow(i);
+          throw e;
+        }
+        f.status = 'uploaded'; f.pct = null; patchUpRow(i);
+        out.textContent = `uploaded ${++uploadedCount}/${todo.length}`;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, Math.max(todo.length, 1)) }, worker));
     out.textContent = 'committing…';
     const commit = await post(`api/upload/${uid}/commit`, {
       files: upQueue.map(f => ({
@@ -1097,12 +1133,57 @@ async function startWebUpload() {
       <a href="#tx/${outcome.id}" class="mono">${pad(outcome.id)}</a> —
       ${num(outcome.files_new)} new (${fmt(outcome.bytes_copied)}), ${num(outcome.files_deduped)} deduplicated</span>`;
     upQueue = [];
+    localStorage.removeItem('symfront_pending_upload');
+    clearUploadResume();
   } catch (e) {
-    out.innerHTML = `<span class="sev-error">${esc(e.message)}</span>`;
+    out.innerHTML = `<span class="sev-error">${esc(e.message)} —
+      progress is kept; revisit this tab to resume</span>`;
   } finally {
     upBusy = false;
     renderUpQueue();
   }
+}
+
+let upResumeId = null;
+function clearUploadResume() {
+  upResumeId = null;
+  $('#upResume').innerHTML = '';
+  $('#upProduct').disabled = $('#upVersion').disabled = $('#upComment').disabled = false;
+}
+
+/* Offer to resume a previous interrupted upload session (server keeps staged
+   files for 24h of inactivity). */
+async function checkUploadResume() {
+  if (upResumeId || upBusy) return;
+  clearUploadResume();
+  let pending = null;
+  try { pending = JSON.parse(localStorage.getItem('symfront_pending_upload')); } catch {}
+  if (!pending || !pending.id) return;
+  let sess;
+  try { sess = await api('api/upload/' + pending.id); }
+  catch {
+    localStorage.removeItem('symfront_pending_upload'); // expired or unknown
+    return;
+  }
+  $('#upResume').innerHTML = `<div class="banner info">
+    An earlier upload of <b>${esc(sess.product)}</b> has ${num(sess.staged.length)} file(s)
+    already staged on the server.
+    <button class="btn" id="resumeBtn">Resume</button>
+    <button class="btn" id="discardBtn">Discard</button></div>`;
+  $('#resumeBtn').addEventListener('click', () => {
+    upResumeId = pending.id;
+    $('#upProduct').value = sess.product;
+    $('#upVersion').value = sess.version;
+    $('#upComment').value = sess.comment;
+    $('#upProduct').disabled = $('#upVersion').disabled = $('#upComment').disabled = true;
+    $('#upResume').innerHTML = `<div class="banner info">Resuming: add the same files/folder
+      again — already-staged files will not be re-transferred.</div>`;
+  });
+  $('#discardBtn').addEventListener('click', async () => {
+    try { await api('api/upload/' + pending.id, {method: 'DELETE'}); } catch {}
+    localStorage.removeItem('symfront_pending_upload');
+    clearUploadResume();
+  });
 }
 
 $('#upStart').addEventListener('click', startWebUpload);

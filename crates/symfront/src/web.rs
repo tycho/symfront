@@ -652,7 +652,7 @@ pub async fn serve(
             .redirect(reqwest::redirect::Policy::limited(4))
             .build()?,
     });
-    crate::web_upload::cleanup_stale_staging(&state.store);
+    crate::web_upload::restore_staging_sessions(&state);
     spawn_scan(Arc::clone(&state));
     // Keep the watcher alive for the whole server lifetime.
     let _watcher = match spawn_admin_watcher(Arc::clone(&state)) {
@@ -695,6 +695,7 @@ pub async fn serve(
                 .layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/upload/{id}/commit", post(crate::web_upload::commit))
+        .route("/api/upload/{id}", get(crate::web_upload::session_status))
         .route("/api/upload/{id}", delete(crate::web_upload::abort))
         .route("/api/jobs/{id}", get(crate::web_upload::job_status))
         .route("/api/login", post(login))
@@ -793,6 +794,8 @@ fn scan_status_json(state: &App) -> serde_json::Value {
 }
 
 fn state_snapshot(state: &App) -> serde_json::Value {
+    // Cheap housekeeping on the SSE heartbeat: expire inactive upload staging.
+    crate::web_upload::prune_stale(state);
     // Drop jobs that finished a while ago so the list can't grow forever.
     let jobs_json: Vec<serde_json::Value> = {
         let mut jobs = state.jobs.lock().unwrap();

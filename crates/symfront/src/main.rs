@@ -97,6 +97,9 @@ enum Command {
         /// Identify and report without changing anything.
         #[arg(long)]
         dry_run: bool,
+        /// Parallel upload streams (remote mode).
+        #[arg(long, short = 'j', default_value_t = 4)]
+        jobs: usize,
     },
     /// Sign in to a --server and store the session locally.
     Login,
@@ -193,8 +196,11 @@ fn main() -> anyhow::Result<()> {
                 version,
                 comment,
                 dry_run,
+                jobs,
             } => {
-                return remote::upload(server, &creds, &paths, &product, &version, &comment, dry_run)
+                return remote::upload(
+                    server, &creds, &paths, &product, &version, &comment, dry_run, jobs,
+                )
             }
             Command::Strays { prune, dry_run } => {
                 return remote::strays(server, &creds, prune, dry_run)
@@ -216,6 +222,7 @@ fn main() -> anyhow::Result<()> {
             version,
             comment,
             dry_run,
+            jobs: _,
         } => cli::upload(&args.store, &paths, &product, &version, &comment, dry_run),
         Command::Serve {
             listen,

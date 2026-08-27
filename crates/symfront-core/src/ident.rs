@@ -21,7 +21,7 @@ use serde::Serialize;
 
 use crate::{Error, Result};
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FileKind {
     Pe,

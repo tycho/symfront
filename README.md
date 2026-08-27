@@ -161,6 +161,13 @@ identified client-side (headers only, nothing is read fully), payloads
 the store already has are skipped, and the commit runs as a server-side
 job. Drag-and-drop of files and folders is supported.
 
+Uploads run a few streams in parallel (`--jobs N` on the CLI, 3-wide in
+the browser) and are resumable: staged files persist server-side across
+interruptions and even server restarts, expiring after 24 h of
+inactivity. The CLI resumes implicitly (re-run the same command; staged
+files are skipped); the web UI offers Resume/Discard when it finds a
+previous session.
+
 ## Remote CLI
 
 `--server URL` (env `SYMFRONT_SERVER`) switches supported commands to

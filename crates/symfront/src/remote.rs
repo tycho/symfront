@@ -377,6 +377,7 @@ pub fn upload(
     version: &str,
     comment: &str,
     dry_run: bool,
+    jobs: usize,
 ) -> Result<()> {
     if paths.is_empty() {
         bail!("no paths given");
@@ -411,49 +412,82 @@ pub fn upload(
     let check_body = json!({
         "files": candidates.iter().map(|c| json!({ "name": c.name, "hash": c.hash })).collect::<Vec<_>>()
     });
-    let present = post(
+    // Skip payloads the store already has, and (on resume) already-staged ones.
+    let check_resp = post(
         server,
         creds,
         &format!("/api/upload/{upload_id}/check"),
         &check_body,
-    )?["present"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    )?;
+    let present = check_resp["present"].as_array().cloned().unwrap_or_default();
+    let staged = check_resp["staged"].as_array().cloned();
+    let todo: Vec<usize> = (0..candidates.len())
+        .filter(|i| {
+            present.get(*i).and_then(|v| v.as_bool()) != Some(true)
+                && staged
+                    .as_ref()
+                    .and_then(|s| s.get(*i))
+                    .and_then(|v| v.as_bool())
+                    != Some(true)
+        })
+        .collect();
+    let deduped = candidates.len() - todo.len();
 
+    // Upload in parallel: symbol files are many and independent, so a few
+    // concurrent streams fill fast LANs far better than one.
+    use std::sync::atomic::{AtomicUsize, Ordering};
     let http = client()?;
-    let mut uploaded = 0usize;
-    let mut deduped = 0usize;
-    for (i, c) in candidates.iter().enumerate() {
-        if present.get(i).and_then(|v| v.as_bool()) == Some(true) {
-            deduped += 1;
-            continue;
+    let next = AtomicUsize::new(0);
+    let done = AtomicUsize::new(0);
+    let failure: std::sync::Mutex<Option<anyhow::Error>> = std::sync::Mutex::new(None);
+    let workers = jobs.clamp(1, 16).min(todo.len().max(1));
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                if failure.lock().unwrap().is_some() {
+                    return;
+                }
+                let k = next.fetch_add(1, Ordering::SeqCst);
+                let Some(&i) = todo.get(k) else { return };
+                let c = &candidates[i];
+                let result = (|| -> Result<()> {
+                    let file = std::fs::File::open(&c.path)?;
+                    let resp = apply_creds(
+                        http.post(format!(
+                            "{}/api/upload/{upload_id}/file?name={}&hash={}&source={}",
+                            norm(server),
+                            urlenc(&c.name),
+                            urlenc(&c.hash),
+                            urlenc(&c.path.to_string_lossy()),
+                        )),
+                        creds,
+                    )
+                    .body(reqwest::blocking::Body::from(file))
+                    .send()?;
+                    parse_response(resp)
+                        .with_context(|| format!("uploading {}", c.path.display()))?;
+                    Ok(())
+                })();
+                match result {
+                    Ok(()) => {
+                        let d = done.fetch_add(1, Ordering::SeqCst) + 1;
+                        eprint!("\r\x1b[Kuploading {d}/{} ({workers} parallel)", todo.len());
+                        let _ = std::io::stderr().flush();
+                    }
+                    Err(e) => {
+                        *failure.lock().unwrap() = Some(e);
+                        return;
+                    }
+                }
+            });
         }
-        uploaded += 1;
-        eprint!(
-            "\r\x1b[Kuploading {}/{}: {}",
-            uploaded,
-            candidates.len() - deduped,
-            c.name
-        );
-        let _ = std::io::stderr().flush();
-        let file = std::fs::File::open(&c.path)?;
-        let resp = apply_creds(
-            http.post(format!(
-                "{}/api/upload/{upload_id}/file?name={}&hash={}&source={}",
-                norm(server),
-                urlenc(&c.name),
-                urlenc(&c.hash),
-                urlenc(&c.path.to_string_lossy()),
-            )),
-            creds,
-        )
-        .body(reqwest::blocking::Body::from(file))
-        .send()?;
-        parse_response(resp).with_context(|| format!("uploading {}", c.path.display()))?;
-    }
+    });
     eprint!("\r\x1b[K");
-    println!("{uploaded} uploaded, {deduped} already in store");
+    if let Some(e) = failure.into_inner().unwrap() {
+        eprintln!("upload interrupted — re-run the same command to resume (staged files are kept)");
+        return Err(e);
+    }
+    println!("{} uploaded, {deduped} already in store/staged", todo.len());
 
     let commit_body = json!({
         "files": candidates.iter().map(|c| json!({
