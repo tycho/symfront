@@ -13,9 +13,9 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use axum::extract::{Path as AxPath, Query, State};
 use axum::http::StatusCode;
@@ -99,6 +99,12 @@ struct AppState {
     next_job_id: AtomicU64,
     /// Bumped whenever the index reloads; clients refetch when it changes.
     generation: AtomicU64,
+    /// Set on Ctrl-C so long-lived SSE streams end and graceful shutdown
+    /// can actually complete.
+    shutdown: AtomicBool,
+    /// When we last mutated 000Admin ourselves — lets the external-change
+    /// watcher skip changes we already reacted to.
+    last_self_mutation: Mutex<Option<Instant>>,
 }
 
 type App = Arc<AppState>;
@@ -200,7 +206,9 @@ fn spawn_job(
     });
     state.jobs.lock().unwrap().push(Arc::clone(&job));
     std::thread::spawn(move || {
+        *state.last_self_mutation.lock().unwrap() = Some(Instant::now());
         let result = work(&job.progress);
+        *state.last_self_mutation.lock().unwrap() = Some(Instant::now());
         *job.state.lock().unwrap() = match result {
             Ok(v) => JobState::Done(v),
             Err(e) => JobState::Failed(e.to_string()),
@@ -215,6 +223,60 @@ fn spawn_job(
         spawn_scan(state);
     });
     id
+}
+
+/// Watch `000Admin/` (one inotify watch — the payload tree would need one per
+/// hash dir) for changes made by other tools, e.g. `symstore.exe` over SMB.
+/// Every transaction commit writes there, so this is the reliable signal; a
+/// still-running external add just shows as strays until its commit lands.
+fn spawn_admin_watcher(state: App) -> anyhow::Result<notify::RecommendedWatcher> {
+    use notify::Watcher;
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let mut watcher =
+        notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            let Ok(ev) = res else { return };
+            // Ignore our own scratch files (lock, temp rewrites, journals).
+            let only_ours = !ev.paths.is_empty()
+                && ev.paths.iter().all(|p| {
+                    p.file_name()
+                        .map(|n| {
+                            let n = n.to_string_lossy();
+                            n.starts_with(".symfront") || n.starts_with(ops::JOURNAL_PREFIX)
+                        })
+                        .unwrap_or(false)
+                });
+            if !only_ours {
+                let _ = tx.send(());
+            }
+        })?;
+    let admin = state.store.admin_dir();
+    watcher.watch(&admin, notify::RecursiveMode::NonRecursive)?;
+    tracing::info!("watching {} for external changes", admin.display());
+    std::thread::spawn(move || {
+        while rx.recv().is_ok() {
+            // Debounce: wait for 1.5 s of quiet so we react once per burst.
+            while rx.recv_timeout(Duration::from_millis(1500)).is_ok() {}
+            if state.shutdown.load(Ordering::Relaxed) {
+                break;
+            }
+            // Our own mutations already reload + rescan; skip the echo.
+            let own = state
+                .last_self_mutation
+                .lock()
+                .unwrap()
+                .map(|t| t.elapsed() < Duration::from_secs(5))
+                .unwrap_or(false);
+            if own {
+                continue;
+            }
+            tracing::info!("000Admin changed externally; reloading index and rescanning");
+            match reload_index(&state) {
+                Ok(_) => spawn_scan(Arc::clone(&state)),
+                Err(e) => tracing::error!("index reload after external change failed: {e}"),
+            }
+        }
+    });
+    Ok(watcher)
 }
 
 #[tokio::main]
@@ -234,8 +296,18 @@ pub async fn serve(store_path: PathBuf, listen: String) -> anyhow::Result<()> {
         jobs: Mutex::new(Vec::new()),
         next_job_id: AtomicU64::new(1),
         generation: AtomicU64::new(1),
+        shutdown: AtomicBool::new(false),
+        last_self_mutation: Mutex::new(None),
     });
     spawn_scan(Arc::clone(&state));
+    // Keep the watcher alive for the whole server lifetime.
+    let _watcher = match spawn_admin_watcher(Arc::clone(&state)) {
+        Ok(w) => Some(w),
+        Err(e) => {
+            tracing::warn!("external-change watching unavailable: {e}");
+            None
+        }
+    };
 
     let app = Router::new()
         .route("/", get(|| async { Html(include_str!("ui/index.html")) }))
@@ -249,16 +321,42 @@ pub async fn serve(store_path: PathBuf, listen: String) -> anyhow::Result<()> {
         .route("/api/strays/prune", post(prune))
         .route("/api/check", get(check_endpoint))
         .route("/api/scan", post(rescan))
-        .with_state(state);
+        .with_state(Arc::clone(&state));
 
     let addr: SocketAddr = listen.parse()?;
     tracing::info!("listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    let shutdown_state = Arc::clone(&state);
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
+        .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("shutting down (Ctrl-C again to force)");
+            // Flip the flag so SSE streams end at their next tick; otherwise
+            // graceful shutdown would wait on them forever.
+            shutdown_state.shutdown.store(true, Ordering::Relaxed);
+            tokio::spawn(async {
+                let _ = tokio::signal::ctrl_c().await;
+                tracing::warn!("forcing exit");
+                std::process::exit(130);
+            });
         })
         .await?;
+    // Let any in-flight mutation finish rather than dying mid-delete
+    // (the journal would make it recoverable, but clean is better).
+    loop {
+        let running = state
+            .jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|j| matches!(*j.state.lock().unwrap(), JobState::Running))
+            .count();
+        if running == 0 {
+            break;
+        }
+        tracing::info!("waiting for {running} running job(s) to finish (Ctrl-C to force)");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
     Ok(())
 }
 
@@ -304,12 +402,16 @@ fn state_snapshot(state: &App) -> serde_json::Value {
     })
 }
 
-/// SSE stream: a state snapshot every 750 ms.
+/// SSE stream: a state snapshot every 750 ms. The stream ends when shutdown
+/// is requested — otherwise open EventSource connections would block graceful
+/// shutdown forever.
 async fn events(
     State(state): State<App>,
 ) -> Sse<impl tokio_stream::Stream<Item = std::result::Result<Event, std::convert::Infallible>>> {
     let interval = tokio::time::interval(Duration::from_millis(750));
+    let gate = Arc::clone(&state);
     let stream = tokio_stream::wrappers::IntervalStream::new(interval)
+        .take_while(move |_| !gate.shutdown.load(Ordering::Relaxed))
         .map(move |_| Ok(Event::default().data(state_snapshot(&state).to_string())));
     Sse::new(stream).keep_alive(KeepAlive::default())
 }

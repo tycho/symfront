@@ -55,6 +55,16 @@ The web API mirrors the CLI: `GET /api/summary`, `/api/transactions[/{id}]`,
 - The file formats are written back the way `symstore.exe` writes them
   (CRLF, unterminated final lines, zero-padded ids) so the store stays
   usable by Windows tooling.
+- **Coexistence with symstore.exe**: the server watches `000Admin/` with
+  inotify, so transactions added/deleted by other tools are picked up
+  automatically (index reload + rescan, debounced). An external add in
+  progress shows as strays/incomplete until its commit lands in
+  `000Admin/` — it converges once the other tool finishes. Only the admin
+  dir is watched; the payload tree would need a watch per hash dir.
+- Web mutations (delete, prune) run as background jobs server-side: they
+  keep running if the browser disconnects, progress streams to all
+  connected pages over SSE (`/api/events`), and Ctrl-C waits for running
+  jobs to finish (press it twice to force).
 
 ## Not yet implemented
 
