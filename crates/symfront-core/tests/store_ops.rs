@@ -497,7 +497,20 @@ fn fixture_inputs_are_pinned() {
         assert_eq!(kind, symfront_core::ident::FileKind::Pe);
         assert_eq!(h, hash, "{name}");
     }
+    // Compiled artifacts (clang + lld-link targeting windows-msvc), pinned by
+    // identity: a real linker-produced PE + PDB that native dbghelp accepts.
+    for (name, hash) in COMPILED_INPUTS {
+        let (_, h) = symfront_core::ident::identify(&dir.join(name)).unwrap().unwrap();
+        assert_eq!(h, hash, "{name}");
+    }
 }
+
+/// Real lld-link output checked into tests/data/inputs/ (see tiny.c comment
+/// in the repo history): exercises genuine PDB handling end to end.
+const COMPILED_INPUTS: [(&str, &str); 2] = [
+    ("tiny.exe", "7114D9224000"),
+    ("tiny.pdb", "3EF56CA98FCEBC6E4C4C44205044422E1"),
+];
 
 #[test]
 fn ident_synthetic() {
@@ -582,10 +595,10 @@ fn replay_with_ours(root: &Path) {
         };
         ops::add_transaction(&store, &req, false, &ops::OpProgress::default()).unwrap();
     };
-    add(&["a.exe", "shared.exe"]); // tx 1
-    add(&["b.exe", "shared.exe"]); // tx 2
+    add(&["a.exe", "shared.exe", "tiny.pdb"]); // tx 1
+    add(&["b.exe", "shared.exe", "tiny.exe"]); // tx 2
     ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default())
-        .unwrap(); // tx 3 = del 1
+        .unwrap(); // tx 3 = del 1 (drops a.exe and tiny.pdb payloads)
     add(&["a.exe"]); // tx 4
 }
 
@@ -680,8 +693,8 @@ fn differential_replay_vs_bundled_symstore() {
         fs::create_dir_all(tmp.path().join(d)).unwrap();
     }
     for (d, files) in dirs.iter().zip([
-        &["a.exe", "shared.exe"][..],
-        &["b.exe", "shared.exe"][..],
+        &["a.exe", "shared.exe", "tiny.pdb"][..],
+        &["b.exe", "shared.exe", "tiny.exe"][..],
         &["a.exe"][..],
     ]) {
         for f in files {
@@ -698,6 +711,17 @@ fn differential_replay_vs_bundled_symstore() {
             c
         };
         cmd.env("WINEDEBUG", "-all");
+        // Isolated prefix: keep test wine state out of the user's ~/.wine.
+        // Native dbghelp (bundled next to symstore.exe): wine's builtin
+        // dbghelp cannot index PDBs (SymSrvGetFileIndexes fails, error 18).
+        if !cfg!(windows) {
+            let prefix = std::env::var_os("HOME")
+                .map(|h| Path::new(&h).join(".cache/symfront-tests/wineprefix"))
+                .expect("HOME not set");
+            fs::create_dir_all(&prefix).unwrap();
+            cmd.env("WINEPREFIX", &prefix);
+            cmd.env("WINEDLLOVERRIDES", "dbghelp=n");
+        }
         let out = cmd.args(args).output().expect("running symstore.exe");
         assert!(out.status.success(), "symstore.exe failed: {args:?}");
         let text = String::from_utf8_lossy(&out.stdout).into_owned();
