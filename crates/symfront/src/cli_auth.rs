@@ -26,6 +26,12 @@ pub enum UserCommand {
     Rm { name: String },
     /// Set a user's password.
     Passwd { name: String },
+    /// Change a user's role.
+    Role {
+        name: String,
+        #[arg(value_enum)]
+        role: Role,
+    },
 }
 
 #[derive(Subcommand)]
@@ -128,6 +134,10 @@ pub fn user(db_path: &Path, cmd: UserCommand) -> Result<()> {
             let password = read_password(&format!("new password for {name}"))?;
             db.set_password(&name, &password)?;
             println!("password updated for {name}");
+        }
+        UserCommand::Role { name, role } => {
+            db.set_role(&name, role)?;
+            println!("role of {name} set to {role}");
         }
     }
     Ok(())

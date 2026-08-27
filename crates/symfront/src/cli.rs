@@ -93,6 +93,19 @@ fn with_op_progress<T>(
     result
 }
 
+pub fn init(store_path: &Path) -> anyhow::Result<()> {
+    let admin = store_path.join("000Admin");
+    if admin.is_dir() {
+        bail!("{} already looks like a symbol store", store_path.display());
+    }
+    std::fs::create_dir_all(&admin)?;
+    // Some HTTP clients (e.g. Ghidra) require pingme.txt to consider the
+    // server alive; symstore.exe-compatible admin files appear on first add.
+    std::fs::write(store_path.join("pingme.txt"), b"")?;
+    println!("initialized empty symbol store at {}", store_path.display());
+    Ok(())
+}
+
 pub fn status(store_path: &Path) -> anyhow::Result<()> {
     let (store, index) = open(store_path)?;
     let active = index.active_transactions().count();

@@ -235,11 +235,11 @@ $('#loginForm').addEventListener('submit', async e => {
   $('#loginErr').textContent = '';
   try {
     if (pendingLoginToken) {
-      await post('/api/login/totp', {login_token: pendingLoginToken, code: $('#loginCode').value});
+      await post('api/login/totp', {login_token: pendingLoginToken, code: $('#loginCode').value});
       location.reload();
       return;
     }
-    const r = await post('/api/login', {username: $('#loginUser').value, password: $('#loginPass').value});
+    const r = await post('api/login', {username: $('#loginUser').value, password: $('#loginPass').value});
     if (r.totp_required) {
       pendingLoginToken = r.login_token;
       $('#loginPass').hidden = true;
@@ -260,10 +260,10 @@ $('#passkeyBtn').addEventListener('click', async () => {
   const username = $('#loginUser').value.trim();
   if (!username) { $('#loginErr').textContent = 'enter your username first'; return; }
   try {
-    const s = await post('/api/login/webauthn/start', {username});
+    const s = await post('api/login/webauthn/start', {username});
     const opts = PublicKeyCredential.parseRequestOptionsFromJSON(s.challenge.publicKey);
     const cred = await navigator.credentials.get({publicKey: opts});
-    await post('/api/login/webauthn/finish', {login_token: s.login_token, credential: cred.toJSON()});
+    await post('api/login/webauthn/finish', {login_token: s.login_token, credential: cred.toJSON()});
     location.reload();
   } catch (err) { $('#loginErr').textContent = err.message || String(err); }
 });
@@ -272,7 +272,7 @@ function renderUserChip() {
   $('#userChip').innerHTML = `${esc(me.user.name)} (${esc(me.user.role)})
     <button id="logoutBtn">sign out</button>`;
   $('#logoutBtn').addEventListener('click', async () => {
-    await api('/api/logout', {method: 'POST'});
+    await api('api/logout', {method: 'POST'});
     location.reload();
   });
 }
@@ -323,7 +323,7 @@ window.addEventListener('hashchange', route);
 let liveState = null, lastGen = null;
 const dismissedJobs = new Set();
 function startEvents() {
-  const es = new EventSource('/api/events');
+  const es = new EventSource('api/events');
   es.onmessage = e => handleState(JSON.parse(e.data));
   es.onerror = () => { $('#scanStatus').textContent = 'live updates disconnected — retrying…'; };
 }
@@ -425,7 +425,7 @@ function patchDelOut(jobs) {
 let summary = null;
 async function refreshSummary() {
   try {
-    summary = await api('/api/summary');
+    summary = await api('api/summary');
     $('#storePath').textContent = summary.store;
     updateScanHeader(summary.scan);
     if (!$('#tab-overview').hidden) renderOverview();
@@ -459,7 +459,7 @@ function renderOverview() {
       ${done ? `scanned ${new Date(sc.scanned_at * 1000).toLocaleString()}` : ''}
     </p>`;
 }
-async function rescan() { await api('/api/scan', {method:'POST'}); refreshSummary(); }
+async function rescan() { await api('api/scan', {method:'POST'}); refreshSummary(); }
 
 /* ---------- transactions list ---------- */
 let txData = [], txHaveScan = false;
@@ -480,7 +480,7 @@ const txAccessors = {
 };
 
 async function loadTransactions() {
-  const d = await api('/api/transactions');
+  const d = await api('api/transactions');
   txData = d.transactions;
   txHaveScan = d.have_scan;
   renderTxTable();
@@ -565,7 +565,7 @@ function closeDetail() { $('#detail').classList.remove('open'); }
 
 async function renderTxDetail(id, container, mode) {
   let t;
-  try { t = await api('/api/transactions/' + id); }
+  try { t = await api('api/transactions/' + id); }
   catch (e) { container.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
   currentTx = { data: t, mode };
   Object.assign(entryState, { filter: 'all', rel: null, sort: { key: 'file', dir: 1 } });
@@ -689,7 +689,7 @@ async function delTx(id, dryRun) {
   }
   const out = $('#delOut'); out.innerHTML = '<p class="muted">working…</p>';
   try {
-    const r = await api(`/api/transactions/${id}?dry_run=${dryRun}`, {method: 'DELETE'});
+    const r = await api(`api/transactions/${id}?dry_run=${dryRun}`, {method: 'DELETE'});
     if (dryRun) {
       out.innerHTML = `<div class="banner ok">Dry run — nothing changed:
         ${num(r.files_removed)} files / ${fmt(r.freed_apparent)} apparent / ${fmt(r.freed_disk)} on disk would be freed;
@@ -721,7 +721,7 @@ $('#searchBox').addEventListener('input', () => {
 async function doSearch() {
   const q = $('#searchBox').value.trim();
   if (q.length < 2) { $('#searchResults').innerHTML = ''; $('#searchInfo').textContent = ''; return; }
-  const d = await api('/api/search?q=' + encodeURIComponent(q));
+  const d = await api('api/search?q=' + encodeURIComponent(q));
   searchHits = d.hits;
   $('#searchInfo').textContent = d.hits.length + (d.limited ? '+ results (truncated)' : ' results');
   renderSearch();
@@ -769,7 +769,7 @@ function updateStraysWaiting(sc) {
 async function loadStrays() {
   $('#straysTop').innerHTML = '<p class="muted">loading…</p>';
   $('#straysTable').innerHTML = '';
-  try { straysData = (await api('/api/strays')).strays; straysWaiting = false; }
+  try { straysData = (await api('api/strays')).strays; straysWaiting = false; }
   catch (e) {
     if (e.status === 503) {
       straysWaiting = true;
@@ -830,7 +830,7 @@ async function pruneAll(dryRun) {
   if (!dryRun && !confirm('Permanently delete ALL stray files listed? Indexed payloads are never touched.')) return;
   const out = $('#pruneOut'); out.innerHTML = '<span class="muted">working…</span>';
   try {
-    const r = await api('/api/strays/prune', {
+    const r = await api('api/strays/prune', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({all: true, dry_run: dryRun}),
     });
@@ -848,7 +848,7 @@ async function pruneAll(dryRun) {
 async function loadCheck() {
   const el = $('#tab-check');
   el.innerHTML = '<p class="muted">running checks…</p>';
-  const d = await api('/api/check');
+  const d = await api('api/check');
   const rows = [...d.admin, ...(d.deep || [])];
   const missing = d.missing_payloads || [];
   if (!rows.length && !missing.length) {
@@ -873,7 +873,7 @@ async function loadAccount() {
   const el = $('#tab-account');
   el.innerHTML = '<p class="muted">loading…</p>';
   let a;
-  try { a = await api('/api/account'); }
+  try { a = await api('api/account'); }
   catch (e) { el.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
   const caps = a.role === 'ro' ? ['ro'] : ['ro', 'rw'];
   el.innerHTML = `
@@ -932,7 +932,7 @@ async function loadAccount() {
     const out = $('#pwOut'); out.textContent = '';
     if ($('#pwNew').value !== $('#pwNew2').value) { out.textContent = 'passwords do not match'; return; }
     try {
-      await post('/api/account/password', {
+      await post('api/account/password', {
         current_password: $('#pwCur') ? $('#pwCur').value : '',
         new_password: $('#pwNew').value,
       });
@@ -944,7 +944,7 @@ async function loadAccount() {
   const setupBtn = $('#totpSetupBtn');
   if (setupBtn) setupBtn.addEventListener('click', async () => {
     const box = $('#totpSetup');
-    const s = await post('/api/account/totp/setup');
+    const s = await post('api/account/totp/setup');
     box.innerHTML = `
       <p>Scan with your authenticator app, or paste the URL into a password manager:</p>
       <div class="qrwrap">${s.qr_svg}</div>
@@ -957,7 +957,7 @@ async function loadAccount() {
     $('#totpEnableForm').addEventListener('submit', async e => {
       e.preventDefault();
       try {
-        await post('/api/account/totp/enable', {secret: s.secret, code: $('#totpCode').value});
+        await post('api/account/totp/enable', {secret: s.secret, code: $('#totpCode').value});
         loadAccount();
       } catch (err) { $('#totpEnableOut').textContent = err.message; }
     });
@@ -966,14 +966,14 @@ async function loadAccount() {
   if (disableForm) disableForm.addEventListener('submit', async e => {
     e.preventDefault();
     try {
-      await post('/api/account/totp/disable', {code: $('#totpDisableCode').value});
+      await post('api/account/totp/disable', {code: $('#totpDisableCode').value});
       loadAccount();
     } catch (err) { $('#totpOut').textContent = err.message; }
   });
 
   document.querySelectorAll('[data-pk]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm('Remove this passkey?')) return;
-    await api('/api/account/passkeys/' + b.dataset.pk, {method: 'DELETE'});
+    await api('api/account/passkeys/' + b.dataset.pk, {method: 'DELETE'});
     loadAccount();
   }));
   const pkAdd = $('#pkAddBtn');
@@ -983,23 +983,23 @@ async function loadAccount() {
     if (name === null) return;
     try {
       if (!window.PublicKeyCredential) throw new Error('this browser/context does not support WebAuthn (needs localhost or HTTPS)');
-      const s = await post('/api/account/passkeys/register/start');
+      const s = await post('api/account/passkeys/register/start');
       const opts = PublicKeyCredential.parseCreationOptionsFromJSON(s.challenge.publicKey);
       const cred = await navigator.credentials.create({publicKey: opts});
-      await post('/api/account/passkeys/register/finish', {reg_token: s.reg_token, name, credential: cred.toJSON()});
+      await post('api/account/passkeys/register/finish', {reg_token: s.reg_token, name, credential: cred.toJSON()});
       loadAccount();
     } catch (err) { out.textContent = err.message || String(err); }
   });
 
   document.querySelectorAll('[data-tok]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm('Revoke this token? Clients using it stop working immediately.')) return;
-    await api('/api/account/tokens/' + b.dataset.tok, {method: 'DELETE'});
+    await api('api/account/tokens/' + b.dataset.tok, {method: 'DELETE'});
     loadAccount();
   }));
   $('#tokForm').addEventListener('submit', async e => {
     e.preventDefault();
     try {
-      const r = await post('/api/account/tokens', {label: $('#tokLabel').value, cap: $('#tokCap').value});
+      const r = await post('api/account/tokens', {label: $('#tokLabel').value, cap: $('#tokCap').value});
       $('#tokReveal').innerHTML = `<div class="tokenreveal">${esc(r.token)}<br>
         <span class="muted">shown once — copy it now</span>
         <button class="btn" style="float:right" onclick="navigator.clipboard.writeText('${esc(r.token)}')">copy</button></div>`;
@@ -1012,7 +1012,7 @@ async function loadAdmin() {
   const el = $('#tab-admin');
   el.innerHTML = '<p class="muted">loading…</p>';
   let d;
-  try { d = await api('/api/admin/users'); }
+  try { d = await api('api/admin/users'); }
   catch (e) { el.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
   el.innerHTML = `
     <table><thead><tr><th>user</th><th>role</th><th>auth methods</th><th>tokens</th><th></th></tr></thead><tbody>
@@ -1040,24 +1040,24 @@ async function loadAdmin() {
       <span id="nuOut"></span>
     </form>`;
   document.querySelectorAll('[data-role-user]').forEach(s => s.addEventListener('change', async () => {
-    try { await post(`/api/admin/users/${encodeURIComponent(s.dataset.roleUser)}/role`, {role: s.value}); }
+    try { await post(`api/admin/users/${encodeURIComponent(s.dataset.roleUser)}/role`, {role: s.value}); }
     catch (e) { alert(e.message); loadAdmin(); }
   }));
   document.querySelectorAll('[data-pw-user]').forEach(b => b.addEventListener('click', async () => {
     const pw = prompt(`New password for ${b.dataset.pwUser} (min 8 chars):`);
     if (pw === null) return;
-    try { await post(`/api/admin/users/${encodeURIComponent(b.dataset.pwUser)}/password`, {password: pw}); loadAdmin(); }
+    try { await post(`api/admin/users/${encodeURIComponent(b.dataset.pwUser)}/password`, {password: pw}); loadAdmin(); }
     catch (e) { alert(e.message); }
   }));
   document.querySelectorAll('[data-2fa-user]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm(`Clear TOTP and all passkeys for ${b.dataset['2faUser'] ?? b.getAttribute('data-2fa-user')}? They'll sign in with password only.`)) return;
     const name = b.getAttribute('data-2fa-user');
-    try { await post(`/api/admin/users/${encodeURIComponent(name)}/reset-2fa`); loadAdmin(); }
+    try { await post(`api/admin/users/${encodeURIComponent(name)}/reset-2fa`); loadAdmin(); }
     catch (e) { alert(e.message); }
   }));
   document.querySelectorAll('[data-del-user]').forEach(b => b.addEventListener('click', async () => {
     if (!confirm(`Delete user ${b.dataset.delUser}? Their tokens and sessions are revoked.`)) return;
-    try { await api('/api/admin/users/' + encodeURIComponent(b.dataset.delUser), {method: 'DELETE'}); loadAdmin(); }
+    try { await api('api/admin/users/' + encodeURIComponent(b.dataset.delUser), {method: 'DELETE'}); loadAdmin(); }
     catch (e) { alert(e.message); }
   }));
   $('#addUserForm').addEventListener('submit', async e => {
@@ -1065,7 +1065,7 @@ async function loadAdmin() {
     const out = $('#nuOut'); out.textContent = '';
     const pw = $('#nuPass').value;
     try {
-      await post('/api/admin/users', {name: $('#nuName').value.trim(), role: $('#nuRole').value,
+      await post('api/admin/users', {name: $('#nuName').value.trim(), role: $('#nuRole').value,
                                       password: pw ? pw : null});
       loadAdmin();
     } catch (err) { out.textContent = err.message; }
@@ -1073,7 +1073,7 @@ async function loadAdmin() {
 }
 
 async function init() {
-  try { me = await api('/api/me'); } catch { me = { auth_enabled: false, user: null }; }
+  try { me = await api('api/me'); } catch { me = { auth_enabled: false, user: null }; }
   if (me.auth_enabled && !me.user) { showLogin(); return; }
   if (me.user) {
     $('#navAccount').hidden = false;

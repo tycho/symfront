@@ -150,6 +150,9 @@ pub(crate) struct AppState {
     pub(crate) auth: Option<Arc<AuthState>>,
     /// Trusted reverse-proxy hop count for X-Forwarded-For / -Proto.
     pub(crate) trusted_proxies: usize,
+    /// Upstream symbol servers tried (in order) on /symbols misses.
+    pub(crate) upstreams: Vec<String>,
+    pub(crate) http_client: reqwest::Client,
 }
 
 pub(crate) type App = Arc<AppState>;
@@ -409,12 +412,13 @@ async fn auth_middleware(State(state): State<App>, mut req: Request, next: Next)
         return next.run(req).await;
     }
     let path = req.uri().path().to_string();
-    // The SPA shell, the login flows, and "who am I" are reachable
-    // unauthenticated.
+    // The SPA shell, the login flows, "who am I", and public symbol serving
+    // are reachable unauthenticated.
     if path == "/"
         || path == "/api/me"
         || path == "/api/login"
         || path.starts_with("/api/login/")
+        || path.starts_with("/symbols/")
     {
         return next.run(req).await;
     }
@@ -555,6 +559,8 @@ pub async fn serve(
     auth_db: Option<PathBuf>,
     webauthn_origin: Option<String>,
     trusted_proxies: usize,
+    serve_symbols: bool,
+    upstreams: Vec<String>,
 ) -> anyhow::Result<()> {
     let auth = match &auth_db {
         Some(path) => {
@@ -626,6 +632,10 @@ pub async fn serve(
         last_self_mutation: Mutex::new(None),
         auth,
         trusted_proxies,
+        upstreams: if serve_symbols { upstreams } else { Vec::new() },
+        http_client: reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::limited(4))
+            .build()?,
     });
     spawn_scan(Arc::clone(&state));
     // Keep the watcher alive for the whole server lifetime.
@@ -637,8 +647,20 @@ pub async fn serve(
         }
     };
 
-    let app = Router::new()
-        .route("/", get(|| async { Html(include_str!("ui/index.html")) }))
+    let mut app = Router::new()
+        .route("/", get(|| async { Html(include_str!("ui/index.html")) }));
+    if serve_symbols {
+        tracing::info!(
+            "serving symbols at /symbols/ (public read-only){}",
+            if state.upstreams.is_empty() {
+                String::new()
+            } else {
+                format!(", forwarding misses to {}", state.upstreams.join(", "))
+            }
+        );
+        app = app.route("/symbols/{*path}", get(crate::symbols::serve_symbol));
+    }
+    let app = app
         .route("/api/summary", get(summary))
         .route("/api/events", get(events))
         .route("/api/transactions", get(tx_list))

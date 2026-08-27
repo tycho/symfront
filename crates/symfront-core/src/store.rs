@@ -73,15 +73,26 @@ impl Store {
         self.admin_dir().join(format!("{id}.deleted"))
     }
 
+    /// Missing history.txt means a store with no transactions yet (symstore
+    /// only creates the admin files on first add) — treated as empty.
     pub fn read_history(&self) -> Result<Vec<HistoryRecord>> {
-        let text = self.read_text(&self.history_path())?;
+        let path = self.history_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let text = self.read_text(&path)?;
         Ok(format::lines(&text).map(format::parse_history_line).collect())
     }
 
     /// `server.txt` holds one add record per currently-active transaction.
     /// Returns parsed adds plus any lines that didn't parse as adds.
+    /// Missing file (fresh store) is treated as empty.
     pub fn read_server(&self) -> Result<(Vec<AddRecord>, Vec<String>)> {
-        let text = self.read_text(&self.server_path())?;
+        let path = self.server_path();
+        if !path.exists() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        let text = self.read_text(&path)?;
         let mut adds = Vec::new();
         let mut bad = Vec::new();
         for line in format::lines(&text) {

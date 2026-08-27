@@ -66,6 +66,40 @@ The web API mirrors the CLI: `GET /api/summary`, `/api/transactions[/{id}]`,
   connected pages over SSE (`/api/events`), and Ctrl-C waits for running
   jobs to finish (press it twice to force).
 
+## Serving symbols to debuggers (optional)
+
+`serve --serve-symbols` exposes the store read-only at `/symbols/` in the
+plain HTTP layout dbghelp/symsrv/Ghidra expect: HEAD, byte ranges,
+ETag/Last-Modified conditionals, on-the-fly gzip (skipped for ranges and
+already-CAB-compressed `*_` payloads), and case-insensitive path
+resolution (clients request whatever case the debuggee's headers
+produced). No directory listings; `000Admin/`, `refs.ptr`, and scratch
+files are never served. `/symbols/` is always unauthenticated — that is
+the "unauthenticated" tier of the role model.
+
+`--upstream <url>` (repeatable) forwards local misses to upstream symbol
+servers and proxies the response through — no HTTP redirects, since old
+symsrv builds don't follow them reliably:
+
+```console
+$ symfront init --store /tmp/scratch-store    # ad-hoc store, ready to serve
+$ symfront serve --store /tmp/scratch-store --serve-symbols \
+    --upstream https://msdl.microsoft.com/download/symbols
+```
+
+### Behind nginx
+
+The UI uses relative URLs, so it works under any path prefix without
+configuration — e.g. management at `/admin/` with nginx serving symbols
+itself:
+
+```nginx
+location /admin/ { proxy_pass http://127.0.0.1:8710/; }   # trailing / strips the prefix
+location /symbols/ { root /srv/symstore; ... }            # or let symfront serve them
+```
+
+Combine with `--trusted-proxies 1` so audit logs see real client IPs.
+
 ## Authentication (optional)
 
 Without `--auth-db` the server is open (bind it to localhost or a trusted

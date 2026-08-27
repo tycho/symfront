@@ -1,6 +1,7 @@
 mod auth;
 mod cli;
 mod cli_auth;
+mod symbols;
 mod totp;
 mod web;
 mod web_account;
@@ -41,7 +42,18 @@ enum Command {
         /// and X-Forwarded-Proto: https marks session cookies Secure.
         #[arg(long, default_value_t = 0, env = "SYMFRONT_TRUSTED_PROXIES")]
         trusted_proxies: usize,
+        /// Serve the store read-only (no browsing) at /symbols/ for
+        /// dbghelp/symsrv HTTP clients. Always unauthenticated.
+        #[arg(long)]
+        serve_symbols: bool,
+        /// With --serve-symbols: forward local misses to this upstream symbol
+        /// server and proxy the response through (repeatable, tried in order).
+        /// Example: --upstream https://msdl.microsoft.com/download/symbols
+        #[arg(long)]
+        upstream: Vec<String>,
     },
+    /// Create an empty symbol store at --store (000Admin/ and pingme.txt).
+    Init,
     /// Quick store summary (admin records only; no tree walk).
     Status,
     /// List transactions.
@@ -128,7 +140,18 @@ fn main() -> anyhow::Result<()> {
             auth_db,
             webauthn_origin,
             trusted_proxies,
-        } => web::serve(args.store, listen, auth_db, webauthn_origin, trusted_proxies),
+            serve_symbols,
+            upstream,
+        } => web::serve(
+            args.store,
+            listen,
+            auth_db,
+            webauthn_origin,
+            trusted_proxies,
+            serve_symbols,
+            upstream,
+        ),
+        Command::Init => cli::init(&args.store),
         Command::Status => cli::status(&args.store),
         Command::Tx { command } => match command {
             TxCommand::List { all, sizes } => cli::tx_list(&args.store, all, sizes),
