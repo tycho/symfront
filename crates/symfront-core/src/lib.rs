@@ -20,6 +20,7 @@
 
 pub mod check;
 pub mod format;
+pub mod ident;
 pub mod index;
 pub mod ops;
 pub mod scan;

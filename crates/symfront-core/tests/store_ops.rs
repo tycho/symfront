@@ -296,3 +296,136 @@ fn interrupted_delete_is_reported_and_resumable() {
     ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default()).unwrap();
     assert!(ops::pending_journals(&store).unwrap().is_empty());
 }
+
+/// Ground truth: hash real payloads from the live store and compare against
+/// the directory names symstore.exe chose. Skips when the store is absent.
+#[test]
+fn ident_matches_live_store() {
+    let root = Path::new("/srv/symstore");
+    if !root.is_dir() {
+        return;
+    }
+    let mut checked = 0;
+    for name_dir in fs::read_dir(root).unwrap().flatten() {
+        if checked >= 200 {
+            break;
+        }
+        if !name_dir.file_type().unwrap().is_dir()
+            || name_dir.file_name() == "000Admin"
+        {
+            continue;
+        }
+        let fname = name_dir.file_name().to_string_lossy().into_owned();
+        for hash_dir in fs::read_dir(name_dir.path()).unwrap().flatten() {
+            let expect = hash_dir.file_name().to_string_lossy().into_owned();
+            let payload = hash_dir.path().join(&fname);
+            if !payload.is_file() {
+                continue;
+            }
+            match symfront_core::ident::identify(&payload) {
+                Ok(Some((_kind, hash))) => {
+                    assert_eq!(hash, expect, "hash mismatch for {}", payload.display());
+                    checked += 1;
+                }
+                Ok(None) => panic!("failed to identify {}", payload.display()),
+                Err(e) => panic!("{e}"),
+            }
+        }
+    }
+    assert!(checked > 50, "only {checked} payloads checked");
+}
+
+/// Full add lifecycle with real PE/PDB payloads from the live store; skips
+/// when unavailable.
+#[test]
+fn add_transaction_roundtrip() {
+    let live = Path::new("/srv/symstore/7zr.exe/5685393Cbf000/7zr.exe");
+    let live_pdb = Path::new("/srv/symstore/3dquicklogicplugin.pdb/FBD847692A3A46DE84017F480ACF33891/3dquicklogicplugin.pdb");
+    if !live.is_file() || !live_pdb.is_file() {
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("store");
+    fs::create_dir_all(root.join("000Admin")).unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::copy(live, src.join("7zr.exe")).unwrap();
+    fs::copy(live_pdb, src.join("3dquicklogicplugin.pdb")).unwrap();
+
+    let (candidates, skipped) = symfront_core::ident::collect(&[src.clone()]).unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert!(skipped.is_empty());
+
+    let store = Store::open(&root).unwrap();
+    let req = ops::AddRequest {
+        product: "Test Product".into(),
+        version: "1.0".into(),
+        comment: "".into(),
+        consume: false,
+        files: candidates
+            .iter()
+            .map(|c| ops::AddFile {
+                path: c.path.clone(),
+                name: c.name.clone(),
+                hash: c.hash.clone(),
+                kind: c.kind,
+                source: format!("C:\\build\\{}", c.name),
+            })
+            .collect(),
+    };
+
+    // Dry run: nothing lands.
+    let dry = ops::add_transaction(&store, &req, true, &ops::OpProgress::default()).unwrap();
+    assert!(dry.dry_run && dry.id.is_none());
+    assert_eq!(dry.files_new, 2);
+    assert!(!root.join("7zr.exe").exists());
+
+    let out = ops::add_transaction(&store, &req, false, &ops::OpProgress::default()).unwrap();
+    assert_eq!(out.id, Some(TransactionId(1)));
+    assert_eq!(out.files_new, 2);
+    assert!(root.join("7zr.exe/5685393Cbf000/7zr.exe").is_file());
+    let refs = fs::read_to_string(root.join("7zr.exe/5685393Cbf000/refs.ptr")).unwrap();
+    assert_eq!(refs, "0000000001,file,\"C:\\build\\7zr.exe\",bin,,N,,");
+    let refs_pdb = fs::read_to_string(
+        root.join("3dquicklogicplugin.pdb/FBD847692A3A46DE84017F480ACF33891/refs.ptr"),
+    )
+    .unwrap();
+    assert!(refs_pdb.ends_with(",pri,,N,,"));
+    let manifest = fs::read_to_string(root.join("000Admin/0000000001")).unwrap();
+    assert!(manifest.contains("\"7zr.exe\\5685393Cbf000\",\"C:\\build\\7zr.exe\""));
+    assert!(manifest.ends_with("\r\n")); // manifests are fully terminated
+    let history = fs::read_to_string(root.join("000Admin/history.txt")).unwrap();
+    assert!(history.starts_with("0000000001,add,file,"));
+    assert!(history.contains("\"Test Product\",\"1.0\",\"\","));
+    assert!(ops::pending_journals(&store).unwrap().is_empty());
+
+    // Index sees it; checks are clean.
+    let index = StoreIndex::load(&store).unwrap();
+    assert_eq!(index.active_transactions().count(), 1);
+    assert_eq!(index.entries.len(), 2);
+    fs::write(root.join("pingme.txt"), b"").unwrap();
+    assert!(check::check_admin(&store, &index).unwrap().is_empty());
+
+    // Second add of the same files: dedup, refs gets a second line.
+    let out2 = ops::add_transaction(&store, &req, false, &ops::OpProgress::default()).unwrap();
+    assert_eq!(out2.id, Some(TransactionId(2)));
+    assert_eq!(out2.files_deduped, 2);
+    assert_eq!(out2.files_new, 0);
+    let refs = fs::read_to_string(root.join("7zr.exe/5685393Cbf000/refs.ptr")).unwrap();
+    assert_eq!(
+        refs,
+        "0000000001,file,\"C:\\build\\7zr.exe\",bin,,N,,\r\n0000000002,file,\"C:\\build\\7zr.exe\",bin,,N,,"
+    );
+
+    // Delete tx1: payload survives (tx2 refs it); delete tx2: gone.
+    ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default()).unwrap();
+    assert!(root.join("7zr.exe/5685393Cbf000/7zr.exe").is_file());
+    ops::delete_transaction(&store, TransactionId(2), false, &ops::OpProgress::default()).unwrap();
+    assert!(!root.join("7zr.exe").exists());
+
+    // Deep-clean bill of health.
+    let index = StoreIndex::load(&store).unwrap();
+    let scan = scan::scan(&store, true, &ScanProgress::default()).unwrap();
+    let report = strays::analyze(&index, &scan).strays;
+    assert!(report.strays.is_empty() && report.missing.is_empty());
+}

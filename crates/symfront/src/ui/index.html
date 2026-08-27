@@ -359,7 +359,9 @@ function updateScanHeader(sc) {
 }
 
 function jobLabel(j) {
-  return j.kind === 'delete' ? `deleting tx ${j.target}` : `pruning ${j.target}`;
+  return j.kind === 'delete' ? `deleting tx ${j.target}`
+       : j.kind === 'add' ? `adding "${j.target}"`
+       : `pruning ${j.target}`;
 }
 
 function renderJobs(jobs) {
@@ -440,8 +442,9 @@ function renderOverview() {
   const done = sc.status === 'done';
   const journals = summary.pending_journals || [];
   $('#tab-overview').innerHTML = `
-    ${journals.length ? `<div class="banner err">Interrupted delete(s) pending for transaction(s)
-      ${journals.map(pad).join(', ')} — re-run the delete to finish.</div>` : ''}
+    ${journals.length ? `<div class="banner err">Interrupted operation(s) pending:
+      ${journals.map(j => `${j.kind} ${pad(j.id)}`).join(', ')} — re-run a delete to finish it;
+      an interrupted add leaves strays to prune.</div>` : ''}
     <div class="cards">
       <div class="card"><div class="k">Active transactions</div><div class="v">${num(summary.transactions_active)}</div>
         <div class="sub">${num(summary.transactions_deleted)} deleted</div></div>

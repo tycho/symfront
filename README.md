@@ -138,10 +138,34 @@ $ symfront serve
   marks cookies `Secure`. With the default of 0 those headers are ignored.
 - No TLS built in: front with a reverse proxy if it leaves localhost.
 
-## Not yet implemented
+## Uploading (local or remote)
 
-- `symfront add`: transactional add (recursive discovery of exe/dll/sys/pdb,
-  PE timestamp+size / PDB GUID+age hashing) — locally and via the HTTP API,
-  so remote clients get truly atomic adds instead of `symstore.exe` over UNC.
-- Authentication for the web server (bind it to localhost or a trusted
-  network for now).
+```console
+$ symfront upload ./build/Release --product "My App" --version 1.2.3
+$ symfront --server https://syms.example.com --token sf_… \
+    upload ./build/Release --product "My App" --version 1.2.3
+```
+
+Files are identified by *content*, not extension — every PE flavor
+(exe/dll/sys/ocx/com/…, hashed as TimeDateStamp+SizeOfImage) and MSF 7
+PDBs (GUID+Age) — and land as one atomic transaction. Hashing and the
+on-disk layout (manifests, refs.ptr, history/server records) are
+byte-compatible with `symstore.exe` output, verified against a real
+symstore.exe run and 200+ payloads of an existing store. Remote uploads
+first ask the server which payloads it already has and skip those
+entirely (incremental builds transfer only what changed), then commit
+server-side as a background job that survives client disconnects.
+
+## Remote CLI
+
+`--server URL` (env `SYMFRONT_SERVER`) switches supported commands to
+the HTTP API: `status`, `search`, `tx list/show/del`, `upload`.
+Authentication, in precedence order:
+
+1. `--token` / `SYMFRONT_TOKEN` — an API token; wins over a stored
+   session because tokens have indefinite lifetime (automation keeps
+   working regardless of who is logged in).
+2. A session from `symfront login --server URL` (username + password +
+   TOTP code if enrolled), stored per-server in
+   `~/.config/symfront/sessions.json` (mode 0600). `symfront logout`
+   forgets it.

@@ -48,13 +48,21 @@ pub fn check_admin(store: &Store, index: &StoreIndex) -> Result<Vec<Finding>> {
         ));
     }
 
-    for j in ops::pending_journals(store)? {
-        out.push(finding(
-            Severity::Error,
-            "interrupted-delete",
-            j.to_string(),
-            format!("delete of {j} was interrupted mid-flight (journal present); re-run the delete to finish it"),
-        ));
+    for (j, kind) in ops::pending_journals(store)? {
+        match kind {
+            ops::JournalKind::Del => out.push(finding(
+                Severity::Error,
+                "interrupted-delete",
+                j.to_string(),
+                format!("delete of {j} was interrupted mid-flight (journal present); re-run the delete to finish it"),
+            )),
+            ops::JournalKind::Add => out.push(finding(
+                Severity::Error,
+                "interrupted-add",
+                j.to_string(),
+                format!("add of {j} was interrupted before committing; its payloads show as strays claiming id {j} — prune them and remove the journal"),
+            )),
+        }
     }
 
     for rec in &index.history {

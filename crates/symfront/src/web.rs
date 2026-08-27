@@ -66,9 +66,9 @@ enum JobState {
 
 /// A background mutation. Lives in its own thread; the HTTP response returns
 /// immediately with the job id and progress streams over `/api/events`.
-struct Job {
-    id: u64,
-    kind: &'static str, // "delete" | "prune"
+pub(crate) struct Job {
+    pub(crate) id: u64,
+    kind: &'static str, // "delete" | "prune" | "add"
     target: String,
     progress: OpProgress,
     state: Mutex<JobState>,
@@ -76,7 +76,7 @@ struct Job {
 }
 
 impl Job {
-    fn to_json(&self) -> serde_json::Value {
+    pub(crate) fn to_json(&self) -> serde_json::Value {
         let state = self.state.lock().unwrap();
         let (state_str, outcome, error) = match &*state {
             JobState::Running => ("running", None, None),
@@ -136,7 +136,9 @@ pub(crate) struct AppState {
     pub(crate) store: Store,
     index: RwLock<Arc<StoreIndex>>,
     scan: Mutex<ScanSlot>,
-    jobs: Mutex<Vec<Arc<Job>>>,
+    pub(crate) jobs: Mutex<Vec<Arc<Job>>>,
+    /// In-flight upload sessions (staging under 000Admin/_symfront_staging/).
+    pub(crate) uploads: Mutex<HashMap<String, crate::web_upload::UploadSession>>,
     next_job_id: AtomicU64,
     /// Bumped whenever the index reloads; clients refetch when it changes.
     generation: AtomicU64,
@@ -271,6 +273,18 @@ fn spawn_job(
         spawn_scan(state);
     });
     id
+}
+
+/// Background add job: runs the transaction, then cleans its staging dir.
+pub(crate) fn spawn_add_job(state: &App, request: ops::AddRequest, staging_dir: PathBuf) -> u64 {
+    let store = state.store.clone();
+    let target = request.product.clone();
+    spawn_job(Arc::clone(state), "add", target, move |progress| {
+        let result = ops::add_transaction(&store, &request, false, progress);
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        let outcome = result?;
+        Ok(serde_json::to_value(&outcome).unwrap())
+    })
 }
 
 /// Watch `000Admin/` (one inotify watch — the payload tree would need one per
@@ -626,6 +640,7 @@ pub async fn serve(
         index: RwLock::new(index),
         scan: Mutex::new(ScanSlot::default()),
         jobs: Mutex::new(Vec::new()),
+        uploads: Mutex::new(HashMap::new()),
         next_job_id: AtomicU64::new(1),
         generation: AtomicU64::new(1),
         shutdown: AtomicBool::new(false),
@@ -637,6 +652,7 @@ pub async fn serve(
             .redirect(reqwest::redirect::Policy::limited(4))
             .build()?,
     });
+    crate::web_upload::cleanup_stale_staging(&state.store);
     spawn_scan(Arc::clone(&state));
     // Keep the watcher alive for the whole server lifetime.
     let _watcher = match spawn_admin_watcher(Arc::clone(&state)) {
@@ -671,6 +687,16 @@ pub async fn serve(
         .route("/api/strays/prune", post(prune))
         .route("/api/check", get(check_endpoint))
         .route("/api/scan", post(rescan))
+        .route("/api/upload/begin", post(crate::web_upload::begin))
+        .route("/api/upload/{id}/check", post(crate::web_upload::check))
+        .route(
+            "/api/upload/{id}/file",
+            post(crate::web_upload::upload_file)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route("/api/upload/{id}/commit", post(crate::web_upload::commit))
+        .route("/api/upload/{id}", delete(crate::web_upload::abort))
+        .route("/api/jobs/{id}", get(crate::web_upload::job_status))
         .route("/api/login", post(login))
         .route("/api/login/totp", post(web_account::login_totp))
         .route("/api/login/webauthn/start", post(web_account::login_webauthn_start))
@@ -806,6 +832,10 @@ async fn summary(State(state): State<App>) -> ApiResult<Json<serde_json::Value>>
         .values()
         .filter(|t| !t.deleted_by.is_empty())
         .count();
+    let journals: Vec<serde_json::Value> = journals
+        .iter()
+        .map(|(id, kind)| json!({ "id": id, "kind": kind }))
+        .collect();
     Ok(Json(json!({
         "store": state.store.root().to_string_lossy(),
         "lastid": index.lastid,

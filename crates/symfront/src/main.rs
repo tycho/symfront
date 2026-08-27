@@ -1,10 +1,12 @@
 mod auth;
 mod cli;
 mod cli_auth;
+mod remote;
 mod symbols;
 mod totp;
 mod web;
 mod web_account;
+mod web_upload;
 
 use clap::{Parser, Subcommand};
 use symfront_core::TransactionId;
@@ -13,9 +15,19 @@ use symfront_core::TransactionId;
 #[derive(Parser)]
 #[command(name = "symfront", version, about)]
 struct Args {
-    /// Path to the symbol store root.
+    /// Path to the symbol store root (local mode).
     #[arg(long, global = true, env = "SYMFRONT_STORE", default_value = "/srv/symstore")]
     store: std::path::PathBuf,
+
+    /// symfront server URL — switches supported commands to remote mode
+    /// (status, search, tx list/show/del, upload).
+    #[arg(long, global = true, env = "SYMFRONT_SERVER")]
+    server: Option<String>,
+
+    /// API token for remote mode. Takes precedence over a stored login
+    /// session (tokens have indefinite lifetime).
+    #[arg(long, global = true, env = "SYMFRONT_TOKEN")]
+    token: Option<String>,
 
     #[command(subcommand)]
     command: Command,
@@ -67,6 +79,29 @@ enum Command {
         #[arg(long, default_value_t = 50)]
         limit: usize,
     },
+    /// Add files to the store as one transaction (like `symstore add`):
+    /// recursively identifies PE binaries of any kind and PDBs by content.
+    /// Local against --store, or remote against --server.
+    Upload {
+        /// Files and/or directories to scan.
+        paths: Vec<std::path::PathBuf>,
+        /// Product name recorded in the transaction.
+        #[arg(long, short = 't')]
+        product: String,
+        /// Version recorded in the transaction.
+        #[arg(long, short = 'v', default_value = "")]
+        version: String,
+        /// Comment recorded in the transaction.
+        #[arg(long, short = 'c', default_value = "")]
+        comment: String,
+        /// Identify and report without changing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Sign in to a --server and store the session locally.
+    Login,
+    /// Sign out of a --server and forget the stored session.
+    Logout,
     /// Detect stray files not accounted for by any active transaction.
     Strays {
         /// Delete the strays found.
@@ -134,7 +169,50 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+
+    // Remote mode: --server routes supported commands through the HTTP API.
+    if let Some(server) = &args.server {
+        let creds = remote::Credentials::resolve(server, args.token.clone())?;
+        match args.command {
+            Command::Login => return remote::login(server),
+            Command::Logout => return remote::logout(server),
+            Command::Status => return remote::status(server, &creds),
+            Command::Search { query, limit } => {
+                return remote::search(server, &creds, &query, limit)
+            }
+            Command::Tx { command } => match command {
+                TxCommand::List { all, sizes: _ } => return remote::tx_list(server, &creds, all),
+                TxCommand::Show { id } => return remote::tx_show(server, &creds, id),
+                TxCommand::Del { id, dry_run, yes } => {
+                    return remote::tx_del(server, &creds, id, dry_run, yes)
+                }
+            },
+            Command::Upload {
+                paths,
+                product,
+                version,
+                comment,
+                dry_run,
+            } => {
+                return remote::upload(server, &creds, &paths, &product, &version, &comment, dry_run)
+            }
+            _ => anyhow::bail!(
+                "this command is local-only; drop --server or run it on the server host"
+            ),
+        }
+    }
+
     match args.command {
+        Command::Login | Command::Logout => {
+            anyhow::bail!("login/logout need --server (or SYMFRONT_SERVER)")
+        }
+        Command::Upload {
+            paths,
+            product,
+            version,
+            comment,
+            dry_run,
+        } => cli::upload(&args.store, &paths, &product, &version, &comment, dry_run),
         Command::Serve {
             listen,
             auth_db,

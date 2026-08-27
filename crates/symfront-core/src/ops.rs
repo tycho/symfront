@@ -283,8 +283,13 @@ fn rewrite_server_without(store: &Store, id: TransactionId) -> Result<()> {
 
 fn append_history_line(store: &Store, line: &str) -> Result<()> {
     let path = store.history_path();
-    let existing = fs::read(&path).map_err(|e| Error::io(&path, e))?;
+    let existing = match fs::read(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(Error::io(&path, e)),
+    };
     let mut f = fs::OpenOptions::new()
+        .create(true)
         .append(true)
         .open(&path)
         .map_err(|e| Error::io(&path, e))?;
@@ -313,17 +318,282 @@ fn write_file_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     fs::rename(&tmp, path).map_err(|e| Error::io(path, e))
 }
 
-/// Leftover delete journals from interrupted operations.
-pub fn pending_journals(store: &Store) -> Result<Vec<TransactionId>> {
+// ---------- add ----------
+
+pub const ADD_JOURNAL_PREFIX: &str = "_symfront_add_";
+
+/// One file of an add request.
+#[derive(Clone, Debug)]
+pub struct AddFile {
+    /// Local path of the payload to ingest.
+    pub path: PathBuf,
+    /// Store file name (first path component).
+    pub name: String,
+    pub hash: String,
+    pub kind: crate::ident::FileKind,
+    /// Source path recorded in the manifest and refs.ptr — the client's
+    /// original path for uploads, the local path for local adds.
+    pub source: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct AddRequest {
+    pub product: String,
+    pub version: String,
+    pub comment: String,
+    pub files: Vec<AddFile>,
+    /// Try to rename payloads into place (staging on the same filesystem)
+    /// before falling back to a copy.
+    pub consume: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct AddOutcome {
+    pub id: Option<TransactionId>,
+    /// Payloads newly stored.
+    pub files_new: u64,
+    /// Payloads that already existed (only a refs.ptr line was added).
+    pub files_deduped: u64,
+    pub bytes_copied: u64,
+    pub warnings: Vec<String>,
+    pub dry_run: bool,
+}
+
+/// Strip characters that would corrupt the quoted-CSV admin records
+/// (symstore has no escaping convention for embedded quotes).
+fn sanitize_field(s: &str) -> String {
+    s.replace(['"', '\r', '\n'], "'")
+}
+
+fn valid_component(s: &str) -> bool {
+    !s.is_empty()
+        && !s.contains(['/', '\\', '\0'])
+        && s != "."
+        && s != ".."
+        && !s.eq_ignore_ascii_case("000admin")
+        && !s.starts_with(".symfront")
+        && !s.starts_with("_symfront")
+}
+
+/// Add a transaction the way `symstore add` would, but atomically: payloads
+/// and refs.ptr lines land first, then the manifest, then the admin records
+/// commit the transaction. The store lock is held throughout, and a journal
+/// marks the operation so an interrupted add is detectable (its files show
+/// as strays claiming a never-committed id, prunable).
+pub fn add_transaction(
+    store: &Store,
+    req: &AddRequest,
+    dry_run: bool,
+    progress: &OpProgress,
+) -> Result<AddOutcome> {
+    if req.files.is_empty() {
+        return Err(Error::Refused("no files to add".into()));
+    }
+    if req.product.trim().is_empty() {
+        return Err(Error::Refused("product must not be empty".into()));
+    }
+    for f in &req.files {
+        if !valid_component(&f.name) || !valid_component(&f.hash) {
+            return Err(Error::Refused(format!(
+                "invalid store path component in {}\\{}",
+                f.name, f.hash
+            )));
+        }
+    }
+    let _lock = store.lock_exclusive()?;
+
+    let mut out = AddOutcome {
+        dry_run,
+        ..Default::default()
+    };
+    let id = TransactionId(store.read_lastid()?.map(|t| t.0).unwrap_or(0) + 1);
+
+    // Dedupe within the request: one manifest entry / refs line per dir.
+    let mut seen: std::collections::HashSet<(String, String)> = Default::default();
+    let mut files: Vec<&AddFile> = Vec::new();
+    for f in &req.files {
+        if seen.insert((f.name.to_lowercase(), f.hash.to_lowercase())) {
+            files.push(f);
+        } else {
+            out.warnings
+                .push(format!("{}\\{}: listed twice in request; using first", f.name, f.hash));
+        }
+    }
+
+    let journal = store.admin_dir().join(format!("{ADD_JOURNAL_PREFIX}{id}"));
+    if !dry_run {
+        write_file(&journal, format!("adding {id}\n").as_bytes())?;
+    }
+
+    progress
+        .total
+        .store(files.len() as u64, Ordering::Relaxed);
+    for f in &files {
+        add_one_payload(store, id, f, dry_run, req.consume, progress, &mut out)?;
+        progress.done.fetch_add(1, Ordering::Relaxed);
+    }
+
+    if !dry_run {
+        // Manifest. Unlike history.txt, symstore terminates every manifest
+        // line including the last (verified against symstore.exe output).
+        let mut manifest: String = files
+            .iter()
+            .map(|f| {
+                format!(
+                    "\"{}\\{}\",\"{}\"",
+                    f.name,
+                    f.hash,
+                    sanitize_field(&f.source)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        manifest.push_str("\r\n");
+        write_file_atomic(&store.tx_file_path(id), manifest.as_bytes())?;
+
+        // Commit: history + server + lastid, symstore-style local timestamps.
+        let now = chrono::Local::now();
+        let record = format!(
+            "{id},add,file,{},{},\"{}\",\"{}\",\"{}\",",
+            now.format("%m/%d/%Y"),
+            now.format("%H:%M:%S"),
+            sanitize_field(&req.product),
+            sanitize_field(&req.version),
+            sanitize_field(&req.comment),
+        );
+        append_history_line(store, &record)?;
+        append_server_line(store, &record)?;
+        write_file(&store.lastid_path(), id.to_string().as_bytes())?;
+        fs::remove_file(&journal).map_err(|e| Error::io(&journal, e))?;
+        out.id = Some(id);
+    }
+    Ok(out)
+}
+
+fn add_one_payload(
+    store: &Store,
+    id: TransactionId,
+    f: &AddFile,
+    dry_run: bool,
+    consume: bool,
+    progress: &OpProgress,
+    out: &mut AddOutcome,
+) -> Result<()> {
+    let src_md = fs::metadata(&f.path).map_err(|e| Error::io(&f.path, e))?;
+    // Reuse an existing dir case-insensitively rather than creating a
+    // case-twin next to it.
+    let dir = resolve_dir_case(store.root(), &f.name, &f.hash)
+        .unwrap_or_else(|| store.hash_dir(&f.name, &f.hash));
+    let payload = dir.join(&f.name);
+
+    if payload.is_file() {
+        let existing = fs::metadata(&payload).map_err(|e| Error::io(&payload, e))?;
+        if existing.len() != src_md.len() {
+            out.warnings.push(format!(
+                "{}\\{}: existing payload is {} bytes but incoming is {} — keeping existing (hash collision or corruption?)",
+                f.name,
+                f.hash,
+                existing.len(),
+                src_md.len()
+            ));
+        }
+        out.files_deduped += 1;
+    } else {
+        out.files_new += 1;
+        out.bytes_copied += src_md.len();
+        progress.count_file(src_md.len(), src_md.len());
+        if !dry_run {
+            fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+            let mut done = false;
+            if consume {
+                done = fs::rename(&f.path, &payload).is_ok();
+            }
+            if !done {
+                fs::copy(&f.path, &payload).map_err(|e| Error::io(&payload, e))?;
+            }
+        }
+    }
+
+    if !dry_run {
+        // refs.ptr line, matching symstore's format and unterminated-final-
+        // line style.
+        let line = format!(
+            "{id},file,\"{}\",{},,N,,",
+            sanitize_field(&f.source),
+            f.kind.refs_tag()
+        );
+        let refs_path = dir.join("refs.ptr");
+        let existing = match fs::read(&refs_path) {
+            Ok(b) => Some(b),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(Error::io(&refs_path, e)),
+        };
+        match existing {
+            None => {
+                fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+                write_file(&refs_path, line.as_bytes())?;
+            }
+            Some(bytes) => {
+                let mut fh = fs::OpenOptions::new()
+                    .append(true)
+                    .open(&refs_path)
+                    .map_err(|e| Error::io(&refs_path, e))?;
+                if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                    fh.write_all(b"\r\n").map_err(|e| Error::io(&refs_path, e))?;
+                }
+                fh.write_all(line.as_bytes())
+                    .map_err(|e| Error::io(&refs_path, e))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn append_server_line(store: &Store, line: &str) -> Result<()> {
+    let path = store.server_path();
+    let existing = match fs::read(&path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(Error::io(&path, e)),
+    };
+    let mut fh = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| Error::io(&path, e))?;
+    // server.txt keeps every line terminated (unlike history.txt's final line).
+    if !existing.is_empty() && !existing.ends_with(b"\n") {
+        fh.write_all(b"\r\n").map_err(|e| Error::io(&path, e))?;
+    }
+    fh.write_all(line.as_bytes())
+        .map_err(|e| Error::io(&path, e))?;
+    fh.write_all(b"\r\n").map_err(|e| Error::io(&path, e))?;
+    Ok(())
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JournalKind {
+    Add,
+    Del,
+}
+
+/// Leftover add/delete journals from interrupted operations.
+pub fn pending_journals(store: &Store) -> Result<Vec<(TransactionId, JournalKind)>> {
     let dir = store.admin_dir();
     let mut out = Vec::new();
     let rd = fs::read_dir(&dir).map_err(|e| Error::io(&dir, e))?;
     for ent in rd.flatten() {
         let name = ent.file_name().to_string_lossy().into_owned();
-        if let Some(rest) = name.strip_prefix(JOURNAL_PREFIX) {
-            if let Ok(id) = rest.parse::<TransactionId>() {
-                out.push(id);
-            }
+        let (rest, kind) = if let Some(r) = name.strip_prefix(JOURNAL_PREFIX) {
+            (r, JournalKind::Del)
+        } else if let Some(r) = name.strip_prefix(ADD_JOURNAL_PREFIX) {
+            (r, JournalKind::Add)
+        } else {
+            continue;
+        };
+        if let Ok(id) = rest.parse::<TransactionId>() {
+            out.push((id, kind));
         }
     }
     out.sort();

@@ -106,6 +106,62 @@ pub fn init(store_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn upload(
+    store_path: &Path,
+    paths: &[std::path::PathBuf],
+    product: &str,
+    version: &str,
+    comment: &str,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    if paths.is_empty() {
+        bail!("no paths given");
+    }
+    let (candidates, skipped) = symfront_core::ident::collect(paths)?;
+    for s in &skipped {
+        println!("skipped (not a PE or PDB): {}", s.display());
+    }
+    if candidates.is_empty() {
+        bail!("no identifiable PE/PDB files found");
+    }
+    println!("{} file(s) identified:", candidates.len());
+    for c in &candidates {
+        println!("  {:?}  {}/{}  <- {}", c.kind, c.name, c.hash, c.path.display());
+    }
+    let store = Store::open(store_path)?;
+    let req = ops::AddRequest {
+        product: product.into(),
+        version: version.into(),
+        comment: comment.into(),
+        consume: false,
+        files: candidates
+            .iter()
+            .map(|c| ops::AddFile {
+                path: c.path.clone(),
+                name: c.name.clone(),
+                hash: c.hash.clone(),
+                kind: c.kind,
+                source: c.path.to_string_lossy().into_owned(),
+            })
+            .collect(),
+    };
+    let out = with_op_progress("adding", |p| ops::add_transaction(&store, &req, dry_run, p))?;
+    let verb = if dry_run { "would add" } else { "added" };
+    println!(
+        "{verb} transaction {}: {} new payload(s) ({}), {} deduplicated",
+        out.id
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| "(dry run)".into()),
+        out.files_new,
+        human(out.bytes_copied),
+        out.files_deduped
+    );
+    for w in &out.warnings {
+        println!("  warning: {w}");
+    }
+    Ok(())
+}
+
 pub fn status(store_path: &Path) -> anyhow::Result<()> {
     let (store, index) = open(store_path)?;
     let active = index.active_transactions().count();
@@ -121,7 +177,14 @@ pub fn status(store_path: &Path) -> anyhow::Result<()> {
     println!("hash dirs:    {} referenced", index.referenced_dirs().len());
     let journals = ops::pending_journals(&store)?;
     if !journals.is_empty() {
-        println!("WARNING: interrupted deletes pending: {}", journals.iter().map(|j| j.to_string()).collect::<Vec<_>>().join(", "));
+        println!(
+            "WARNING: interrupted operations pending: {}",
+            journals
+                .iter()
+                .map(|(j, k)| format!("{j} ({k:?})"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
     Ok(())
 }
