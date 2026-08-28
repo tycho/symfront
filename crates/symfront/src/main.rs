@@ -286,7 +286,16 @@ fn main() -> anyhow::Result<()> {
                 jobs,
             } => {
                 return remote::upload(
-                    server, &creds, &paths, &product, &version, &comment, dry_run, jobs,
+                    server,
+                    &creds,
+                    &remote::UploadRequest {
+                        paths: &paths,
+                        product: &product,
+                        version: &version,
+                        comment: &comment,
+                        dry_run,
+                        jobs,
+                    },
                 )
             }
             Command::Strays { prune, dry_run } => {
@@ -304,9 +313,9 @@ fn main() -> anyhow::Result<()> {
                     anyhow::bail!("proxy import is local-only; run it on the server host")
                 }
             },
-            Command::Config { command: ConfigCommand::Reload } => {
-                return remote::config_reload(server, &creds)
-            }
+            Command::Config {
+                command: ConfigCommand::Reload,
+            } => return remote::config_reload(server, &creds),
             _ => anyhow::bail!(
                 "this command is local-only; drop --server or run it on the server host"
             ),
@@ -347,9 +356,7 @@ fn main() -> anyhow::Result<()> {
             uds: uds.or_else(|| cfg.server.uds.clone()),
             auth_db: auth_db.or_else(|| cfg.server.auth_db.clone()),
             webauthn_origin: webauthn_origin.or_else(|| cfg.server.webauthn_origin.clone()),
-            trusted_proxies: trusted_proxies
-                .or(cfg.server.trusted_proxies)
-                .unwrap_or(0),
+            trusted_proxies: trusted_proxies.or(cfg.server.trusted_proxies).unwrap_or(0),
             proxy_only,
             config_dir: cfg.dir.clone(),
         }),
@@ -365,16 +372,16 @@ fn main() -> anyhow::Result<()> {
         Command::Check { deep } => cli::check(&store, deep),
         Command::Proxy { command } => match command {
             ProxyCommand::Stats => cli_proxy::stats(&args.config_dir),
-            ProxyCommand::Health => anyhow::bail!(
-                "health is a live-server view; use --server (or SYMFRONT_SERVER)"
-            ),
+            ProxyCommand::Health => {
+                anyhow::bail!("health is a live-server view; use --server (or SYMFRONT_SERVER)")
+            }
             ProxyCommand::Evict => cli_proxy::evict(&args.config_dir),
-            ProxyCommand::Scrub { report_only } => {
-                cli_proxy::scrub(&args.config_dir, !report_only)
-            }
-            ProxyCommand::Import { from, copy, dry_run } => {
-                cli_proxy::import(&args.config_dir, &from, copy, dry_run)
-            }
+            ProxyCommand::Scrub { report_only } => cli_proxy::scrub(&args.config_dir, !report_only),
+            ProxyCommand::Import {
+                from,
+                copy,
+                dry_run,
+            } => cli_proxy::import(&args.config_dir, &from, copy, dry_run),
         },
         Command::Config { command } => match command {
             ConfigCommand::Init => cli::config_init(&args.config_dir),
@@ -383,9 +390,9 @@ fn main() -> anyhow::Result<()> {
                 cli::config_diff(&args.config_dir, from.as_deref(), to.as_deref())
             }
             ConfigCommand::Rollback { rev } => cli::config_rollback(&args.config_dir, &rev),
-            ConfigCommand::Reload => anyhow::bail!(
-                "config reload needs --server (or send the local server SIGHUP)"
-            ),
+            ConfigCommand::Reload => {
+                anyhow::bail!("config reload needs --server (or send the local server SIGHUP)")
+            }
         },
         Command::User { auth_db, command } => cli_auth::user(&auth_db, command),
         Command::Token { auth_db, command } => cli_auth::token(&auth_db, command),

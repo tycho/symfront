@@ -28,7 +28,9 @@ fn sessions_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+            let home = std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_default();
             home.join(".config")
         });
     base.join("symfront").join("sessions.json")
@@ -151,7 +153,9 @@ pub fn login(server: &str) -> Result<()> {
         if !status.is_success() {
             bail!(
                 "{}",
-                body.get("error").and_then(|e| e.as_str()).unwrap_or("login failed")
+                body.get("error")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("login failed")
             );
         }
         (headers, body)
@@ -172,7 +176,9 @@ pub fn login(server: &str) -> Result<()> {
         if !status.is_success() {
             bail!(
                 "{}",
-                body.get("error").and_then(|e| e.as_str()).unwrap_or("login failed")
+                body.get("error")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("login failed")
             );
         }
         (headers, body)
@@ -231,7 +237,10 @@ pub fn status(server: &str, creds: &Credentials) -> Result<()> {
     println!("store:        {}", s["store"].as_str().unwrap_or("?"));
     println!(
         "last id:      {}",
-        s["lastid"].as_u64().map(|i| format!("{:010}", i)).unwrap_or_else(|| "?".into())
+        s["lastid"]
+            .as_u64()
+            .map(|i| format!("{:010}", i))
+            .unwrap_or_else(|| "?".into())
     );
     println!(
         "transactions: {} active, {} deleted",
@@ -290,8 +299,14 @@ pub fn tx_list(server: &str, creds: &Credentials, all: bool) -> Result<()> {
             t["id_str"].as_str().unwrap_or(""),
             t["record"]["date"].as_str().unwrap_or(""),
             t["entry_count"].as_u64().unwrap_or(0),
-            sizes["apparent"].as_u64().map(human).unwrap_or_else(|| "…".into()),
-            sizes["exclusive_apparent"].as_u64().map(human).unwrap_or_default(),
+            sizes["apparent"]
+                .as_u64()
+                .map(human)
+                .unwrap_or_else(|| "…".into()),
+            sizes["exclusive_apparent"]
+                .as_u64()
+                .map(human)
+                .unwrap_or_default(),
             t["record"]["product"].as_str().unwrap_or("—"),
             t["record"]["version"].as_str().unwrap_or(""),
             if active { "" } else { " [inactive]" },
@@ -303,8 +318,14 @@ pub fn tx_list(server: &str, creds: &Credentials, all: bool) -> Result<()> {
 pub fn tx_show(server: &str, creds: &Credentials, id: TransactionId) -> Result<()> {
     let t = get(server, creds, &format!("/admin/api/transactions/{}", id.0))?;
     println!("transaction {id}");
-    println!("  product: {}", t["record"]["product"].as_str().unwrap_or("—"));
-    println!("  version: {}", t["record"]["version"].as_str().unwrap_or(""));
+    println!(
+        "  product: {}",
+        t["record"]["product"].as_str().unwrap_or("—")
+    );
+    println!(
+        "  version: {}",
+        t["record"]["version"].as_str().unwrap_or("")
+    );
     println!(
         "  added:   {} {}",
         t["record"]["date"].as_str().unwrap_or(""),
@@ -318,7 +339,11 @@ pub fn tx_show(server: &str, creds: &Credentials, id: TransactionId) -> Result<(
             e["apparent"].as_u64().map(human).unwrap_or_default(),
             e["name"].as_str().unwrap_or(""),
             e["hash"].as_str().unwrap_or(""),
-            if e["present"].as_bool() == Some(false) { "  [MISSING]" } else { "" },
+            if e["present"].as_bool() == Some(false) {
+                "  [MISSING]"
+            } else {
+                ""
+            },
             e["source"].as_str().unwrap_or("")
         );
     }
@@ -333,7 +358,10 @@ pub fn tx_del(
     yes: bool,
 ) -> Result<()> {
     if !dry_run && !yes {
-        let typed = prompt_line(&format!("delete transaction {id} on {}? type the id to confirm: ", norm(server)))?;
+        let typed = prompt_line(&format!(
+            "delete transaction {id} on {}? type the id to confirm: ",
+            norm(server)
+        ))?;
         if typed != id.to_string() && typed != id.0.to_string() {
             bail!("aborted");
         }
@@ -369,16 +397,25 @@ pub fn tx_del(
 
 // ---------- upload ----------
 
-pub fn upload(
-    server: &str,
-    creds: &Credentials,
-    paths: &[PathBuf],
-    product: &str,
-    version: &str,
-    comment: &str,
-    dry_run: bool,
-    jobs: usize,
-) -> Result<()> {
+/// Transaction metadata + options for a remote upload.
+pub struct UploadRequest<'a> {
+    pub paths: &'a [PathBuf],
+    pub product: &'a str,
+    pub version: &'a str,
+    pub comment: &'a str,
+    pub dry_run: bool,
+    pub jobs: usize,
+}
+
+pub fn upload(server: &str, creds: &Credentials, req: &UploadRequest<'_>) -> Result<()> {
+    let UploadRequest {
+        paths,
+        product,
+        version,
+        comment,
+        dry_run,
+        jobs,
+    } = *req;
     if paths.is_empty() {
         bail!("no paths given");
     }
@@ -392,7 +429,13 @@ pub fn upload(
     println!("{} file(s) identified", candidates.len());
     if dry_run {
         for c in &candidates {
-            println!("  {:?}  {}/{}  <- {}", c.kind, c.name, c.hash, c.path.display());
+            println!(
+                "  {:?}  {}/{}  <- {}",
+                c.kind,
+                c.name,
+                c.hash,
+                c.path.display()
+            );
         }
         return Ok(());
     }
@@ -419,7 +462,10 @@ pub fn upload(
         &format!("/admin/api/upload/{upload_id}/check"),
         &check_body,
     )?;
-    let present = check_resp["present"].as_array().cloned().unwrap_or_default();
+    let present = check_resp["present"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     let staged = check_resp["staged"].as_array().cloned();
     let todo: Vec<usize> = (0..candidates.len())
         .filter(|i| {
@@ -501,7 +547,9 @@ pub fn upload(
         &format!("/admin/api/upload/{upload_id}/commit"),
         &commit_body,
     )?;
-    let job = commit["job"].as_u64().context("malformed server response")?;
+    let job = commit["job"]
+        .as_u64()
+        .context("malformed server response")?;
     let outcome = wait_for_job(server, creds, job)?;
     println!(
         "added transaction {:010}: {} new payload(s) ({}), {} deduplicated",
@@ -537,7 +585,10 @@ fn wait_for_job(server: &str, creds: &Credentials, job: u64) -> Result<Value> {
             }
             Some("failed") => {
                 eprint!("\r\x1b[K");
-                bail!("server job failed: {}", j["error"].as_str().unwrap_or("unknown"));
+                bail!(
+                    "server job failed: {}",
+                    j["error"].as_str().unwrap_or("unknown")
+                );
             }
             _ => bail!("malformed job status"),
         }
@@ -566,8 +617,14 @@ pub fn strays(server: &str, creds: &Credentials, prune: bool, dry_run: bool) -> 
         }
         Err(e) => return Err(e),
     };
-    let strays = s["strays"]["strays"].as_array().cloned().unwrap_or_default();
-    let missing = s["strays"]["missing"].as_array().cloned().unwrap_or_default();
+    let strays = s["strays"]["strays"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let missing = s["strays"]["missing"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     if strays.is_empty() && missing.is_empty() {
         println!("store is clean: every file is accounted for by an active transaction");
         return Ok(());
@@ -598,7 +655,8 @@ pub fn strays(server: &str, creds: &Credentials, prune: bool, dry_run: bool) -> 
     }
     if prune {
         if !dry_run {
-            let typed = prompt_line("permanently delete ALL strays listed? type 'prune' to confirm: ")?;
+            let typed =
+                prompt_line("permanently delete ALL strays listed? type 'prune' to confirm: ")?;
             if typed != "prune" {
                 bail!("aborted");
             }
@@ -636,11 +694,18 @@ pub fn check(server: &str, creds: &Credentials) -> Result<()> {
     let mut rows: Vec<Value> = d["admin"].as_array().cloned().unwrap_or_default();
     let deep_ran = !d["deep"].is_null();
     rows.extend(d["deep"].as_array().cloned().unwrap_or_default());
-    let missing = d["missing_payloads"].as_array().cloned().unwrap_or_default();
+    let missing = d["missing_payloads"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     if rows.is_empty() && missing.is_empty() {
         println!(
             "no problems found{}",
-            if deep_ran { "" } else { " (deep results pending; server scan still running)" }
+            if deep_ran {
+                ""
+            } else {
+                " (deep results pending; server scan still running)"
+            }
         );
         return Ok(());
     }
@@ -766,7 +831,12 @@ pub fn proxy_health(server: &str, creds: &Credentials) -> Result<()> {
 }
 
 pub fn proxy_evict(server: &str, creds: &Credentials) -> Result<()> {
-    let resp = post(server, creds, "/admin/api/proxy/evict", &serde_json::json!({}))?;
+    let resp = post(
+        server,
+        creds,
+        "/admin/api/proxy/evict",
+        &serde_json::json!({}),
+    )?;
     let job = resp["job"].as_u64().context("no job id in response")?;
     let outcome = wait_job(server, creds, job)?;
     println!("{}", serde_json::to_string_pretty(&outcome)?);
