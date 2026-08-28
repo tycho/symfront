@@ -1,0 +1,5764 @@
+{
+ "generator": "symsrv @ 21ea3c6 (python reference implementation)",
+ "bases": {
+  "symstore": "https://UPSTREAM.example/sym",
+  "debuginfod": "https://DEBUGINFOD.example"
+ },
+ "cases": [
+  {
+   "path": "/foo.pdb/ABCDEF01234567890123456789ABCDEF1/foo.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/foo.pdb/ABCDEF01234567890123456789ABCDEF1/foo.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/foo.pd_/ABCDEF01234567890123456789ABCDEF1/foo.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/foo.pd_/ABCDEF01234567890123456789ABCDEF1/foo.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/bar.dll/11223344aa000/bar.dll",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".dll",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/bar.dll/11223344aa000/bar.dll",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/bar.dl_/11223344aa000/bar.dl_",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".dll",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/bar.dl_/11223344aa000/bar.dl_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/baz.exe/5F0000003000/baz.exe",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".exe",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/baz.exe/5F0000003000/baz.exe",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/baz.ex_/5F0000003000/baz.ex_",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".exe",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/baz.ex_/5F0000003000/baz.ex_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/drv.sys/AABBCCDD9000/drv.sy_",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/drv.sys/AABBCCDD9000/drv.sy_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/old.dbg/12345678/old.db_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".dbg",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/old.dbg/12345678/old.db_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/thing.snupkg/DEADBEEF1/thing.snupkg",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".snupkg",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/thing.snupkg/DEADBEEF1/thing.snupkg",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/file.ptr/ABC123/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/file.ptr/ABC123/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/foo.pdb/ABC/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/foo.pdb/ABC/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/noext/ABC123/noext",
+   "classified": null
+  },
+  {
+   "path": "/weird.xyz/ABC123/weird.xyz",
+   "classified": null
+  },
+  {
+   "path": "/pingme.txt",
+   "classified": null
+  },
+  {
+   "path": "/index2.txt",
+   "classified": null
+  },
+  {
+   "path": "/libc.so.6/elf-buildid-aabbccddeeff00112233445566778899aabbccdd/libc.so.6",
+   "classified": {
+    "family": "elf",
+    "role": "image",
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": "aabbccddeeff00112233445566778899aabbccdd",
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/libc.so.6/elf-buildid-aabbccddeeff00112233445566778899aabbccdd/libc.so.6",
+    "debuginfod": "https://DEBUGINFOD.example/buildid/aabbccddeeff00112233445566778899aabbccdd/executable"
+   }
+  },
+  {
+   "path": "/_.debug/elf-buildid-sym-aabbccddeeff00112233445566778899aabbccdd/_.debug",
+   "classified": {
+    "family": "elf",
+    "role": "debug",
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": "aabbccddeeff00112233445566778899aabbccdd",
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/_.debug/elf-buildid-sym-aabbccddeeff00112233445566778899aabbccdd/_.debug",
+    "debuginfod": "https://DEBUGINFOD.example/buildid/aabbccddeeff00112233445566778899aabbccdd/debuginfo"
+   }
+  },
+  {
+   "path": "/libfoo.so/elf-buildid-AABBCCDDEEFF00112233445566778899AABBCCDD/libfoo.so",
+   "classified": {
+    "family": "elf",
+    "role": "image",
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": "aabbccddeeff00112233445566778899aabbccdd",
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/libfoo.so/elf-buildid-AABBCCDDEEFF00112233445566778899AABBCCDD/libfoo.so",
+    "debuginfod": "https://DEBUGINFOD.example/buildid/aabbccddeeff00112233445566778899aabbccdd/executable"
+   }
+  },
+  {
+   "path": "/app/mach-uuid-0102030405060708090a0b0c0d0e0f10/app",
+   "classified": {
+    "family": "macho",
+    "role": "image",
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": "0102030405060708090a0b0c0d0e0f10",
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/app/mach-uuid-0102030405060708090a0b0c0d0e0f10/app",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/_.dwarf/mach-uuid-sym-0102030405060708090a0b0c0d0e0f10/_.dwarf",
+   "classified": {
+    "family": "macho",
+    "role": "debug",
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": "0102030405060708090a0b0c0d0e0f10",
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/_.dwarf/mach-uuid-sym-0102030405060708090a0b0c0d0e0f10/_.dwarf",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/bad/elf-buildid-nothex/bad",
+   "classified": null
+  },
+  {
+   "path": "/bad/mach-uuid-sym-xyz/bad",
+   "classified": null
+  },
+  {
+   "path": "/bad/elf-buildid-/bad",
+   "classified": null
+  },
+  {
+   "path": "/buildid/aabbccddeeff00112233445566778899aabbccdd/debuginfo",
+   "classified": {
+    "family": "elf",
+    "role": "debug",
+    "ext": null,
+    "inbound_layout": "debuginfod",
+    "ident": "aabbccddeeff00112233445566778899aabbccdd",
+    "source_path": null
+   },
+   "render": {
+    "symstore": null,
+    "debuginfod": "https://DEBUGINFOD.example/buildid/aabbccddeeff00112233445566778899aabbccdd/debuginfo"
+   }
+  },
+  {
+   "path": "/buildid/aabbccddeeff00112233445566778899aabbccdd/executable",
+   "classified": {
+    "family": "elf",
+    "role": "image",
+    "ext": null,
+    "inbound_layout": "debuginfod",
+    "ident": "aabbccddeeff00112233445566778899aabbccdd",
+    "source_path": null
+   },
+   "render": {
+    "symstore": null,
+    "debuginfod": "https://DEBUGINFOD.example/buildid/aabbccddeeff00112233445566778899aabbccdd/executable"
+   }
+  },
+  {
+   "path": "/buildid/aabbccddeeff00112233445566778899aabbccdd/source/usr/src/debug/foo/bar.c",
+   "classified": {
+    "family": "elf",
+    "role": "source",
+    "ext": null,
+    "inbound_layout": "debuginfod",
+    "ident": "aabbccddeeff00112233445566778899aabbccdd",
+    "source_path": "usr/src/debug/foo/bar.c"
+   },
+   "render": {
+    "symstore": null,
+    "debuginfod": "https://DEBUGINFOD.example/buildid/aabbccddeeff00112233445566778899aabbccdd/source/usr/src/debug/foo/bar.c"
+   }
+  },
+  {
+   "path": "/buildid/AABBCCDD/debuginfo",
+   "classified": {
+    "family": "elf",
+    "role": "debug",
+    "ext": null,
+    "inbound_layout": "debuginfod",
+    "ident": "aabbccdd",
+    "source_path": null
+   },
+   "render": {
+    "symstore": null,
+    "debuginfod": "https://DEBUGINFOD.example/buildid/aabbccdd/debuginfo"
+   }
+  },
+  {
+   "path": "/buildid/nothex/debuginfo",
+   "classified": null
+  },
+  {
+   "path": "/buildid/aabbcc/unknownthing",
+   "classified": null
+  },
+  {
+   "path": "/buildid/aabbcc/debuginfo/trailing",
+   "classified": null
+  },
+  {
+   "path": "/buildid/aabbcc/source/",
+   "classified": null
+  },
+  {
+   "path": "/buildid/aabbcc/source",
+   "classified": null
+  },
+  {
+   "path": "/",
+   "classified": null
+  },
+  {
+   "path": "//foo.pdb//x",
+   "classified": null
+  },
+  {
+   "path": "/a",
+   "classified": null
+  },
+  {
+   "path": "/a/b",
+   "classified": null
+  },
+  {
+   "path": "/034B6A5BE24529FC4C4C44205044422E1",
+   "classified": null
+  },
+  {
+   "path": "/034B6A5BE24529FC4C4C44205044422E1_",
+   "classified": null
+  },
+  {
+   "path": "/034B6A5BE24529FC4C4C44205044422E1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb/B4DF4BB1DAB57B6BF51DEC76F1F140351/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb/B4DF4BB1DAB57B6BF51DEC76F1F140351/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb/B4DF4BB1DAB57B6BF51DEC76F1F140351/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb/B4DF4BB1DAB57B6BF51DEC76F1F140351/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb/B4DF4BB1DAB57B6BF51DEC76F1F140351/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/07409496-a423-4a3e-b620-2cfb01a9318d_HyperV-ComputeNetwork.pdb/B4DF4BB1DAB57B6BF51DEC76F1F140351/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb/1F46705CA87B571D00275F43B67E19791/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb/1F46705CA87B571D00275F43B67E19791/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb/1F46705CA87B571D00275F43B67E19791/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb/1F46705CA87B571D00275F43B67E19791/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb/1F46705CA87B571D00275F43B67E19791/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/0ae3b998-9a38-4b72-a4c4-06849441518d_Servicing-Stack.pdb/1F46705CA87B571D00275F43B67E19791/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/0EC60619BCC2A603586C2EBD81FA919F1",
+   "classified": null
+  },
+  {
+   "path": "/0EC60619BCC2A603586C2EBD81FA919F1_",
+   "classified": null
+  },
+  {
+   "path": "/0EC60619BCC2A603586C2EBD81FA919F1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/1394kdbg.pdb/A119D104E2BB5EEC3B698B96D187007B1/1394kdbg.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/1394kdbg.pdb/A119D104E2BB5EEC3B698B96D187007B1/1394kdbg.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/1394kdbg.pdb/A119D104E2BB5EEC3B698B96D187007B1/1394kdbg.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/1394kdbg.pdb/A119D104E2BB5EEC3B698B96D187007B1/1394kdbg.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/1394kdbg.pdb/A119D104E2BB5EEC3B698B96D187007B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/1394kdbg.pdb/A119D104E2BB5EEC3B698B96D187007B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/1394OHCI.pdb/882EE75AFEF89FB53E78BD4FF79177E61/1394OHCI.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/1394OHCI.pdb/882EE75AFEF89FB53E78BD4FF79177E61/1394OHCI.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/1394OHCI.pdb/882EE75AFEF89FB53E78BD4FF79177E61/1394OHCI.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/1394OHCI.pdb/882EE75AFEF89FB53E78BD4FF79177E61/1394OHCI.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/1394OHCI.pdb/882EE75AFEF89FB53E78BD4FF79177E61/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/1394OHCI.pdb/882EE75AFEF89FB53E78BD4FF79177E61/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/161221AB16BB0B60B1883A4C690BA1121",
+   "classified": null
+  },
+  {
+   "path": "/161221AB16BB0B60B1883A4C690BA1121_",
+   "classified": null
+  },
+  {
+   "path": "/161221AB16BB0B60B1883A4C690BA1121/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/2C10D3B669DF4E9A01C4D2BAAC3130421",
+   "classified": null
+  },
+  {
+   "path": "/2C10D3B669DF4E9A01C4D2BAAC3130421_",
+   "classified": null
+  },
+  {
+   "path": "/2C10D3B669DF4E9A01C4D2BAAC3130421/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/2D4AFACC3B412EA94877490C2BE31B6E1",
+   "classified": null
+  },
+  {
+   "path": "/2D4AFACC3B412EA94877490C2BE31B6E1_",
+   "classified": null
+  },
+  {
+   "path": "/2D4AFACC3B412EA94877490C2BE31B6E1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/99A65148AF9861AF9DB25AE4262372A01/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/99A65148AF9861AF9DB25AE4262372A01/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/99A65148AF9861AF9DB25AE4262372A01/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/99A65148AF9861AF9DB25AE4262372A01/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/99A65148AF9861AF9DB25AE4262372A01/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/99A65148AF9861AF9DB25AE4262372A01/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/B0ED05924D057A3CFFC88742E07B99E41/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/B0ED05924D057A3CFFC88742E07B99E41/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/B0ED05924D057A3CFFC88742E07B99E41/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/B0ED05924D057A3CFFC88742E07B99E41/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/B0ED05924D057A3CFFC88742E07B99E41/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3bc29097-7317-41d3-93b9-38a48f99d48a_Mssrch.pdb/B0ED05924D057A3CFFC88742E07B99E41/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3ware.pdb/5EA3E5F47AEE4852AC1E520B42A3E2F81/3ware.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3ware.pdb/5EA3E5F47AEE4852AC1E520B42A3E2F81/3ware.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3ware.pdb/5EA3E5F47AEE4852AC1E520B42A3E2F81/3ware.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3ware.pdb/5EA3E5F47AEE4852AC1E520B42A3E2F81/3ware.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/3ware.pdb/5EA3E5F47AEE4852AC1E520B42A3E2F81/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/3ware.pdb/5EA3E5F47AEE4852AC1E520B42A3E2F81/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb/E4A8B571421A0EF1F6C502DAE8D37C4B1/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb/E4A8B571421A0EF1F6C502DAE8D37C4B1/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb/E4A8B571421A0EF1F6C502DAE8D37C4B1/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb/E4A8B571421A0EF1F6C502DAE8D37C4B1/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb/E4A8B571421A0EF1F6C502DAE8D37C4B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/4545ffe2-0dc4-4df4-9d02-299ef204635e_hvsocket.pdb/E4A8B571421A0EF1F6C502DAE8D37C4B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/4E64D11201660540F127EF9CE56C82941",
+   "classified": null
+  },
+  {
+   "path": "/4E64D11201660540F127EF9CE56C82941_",
+   "classified": null
+  },
+  {
+   "path": "/4E64D11201660540F127EF9CE56C82941/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/4mmdat.pdb/CD2B13545DD55B919A62B9F7AD4CD51A1/4mmdat.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/4mmdat.pdb/CD2B13545DD55B919A62B9F7AD4CD51A1/4mmdat.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/4mmdat.pdb/CD2B13545DD55B919A62B9F7AD4CD51A1/4mmdat.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/4mmdat.pdb/CD2B13545DD55B919A62B9F7AD4CD51A1/4mmdat.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/4mmdat.pdb/CD2B13545DD55B919A62B9F7AD4CD51A1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/4mmdat.pdb/CD2B13545DD55B919A62B9F7AD4CD51A1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/51E097DBFAB3C9C8769B6F81035FD9931",
+   "classified": null
+  },
+  {
+   "path": "/51E097DBFAB3C9C8769B6F81035FD9931_",
+   "classified": null
+  },
+  {
+   "path": "/51E097DBFAB3C9C8769B6F81035FD9931/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/5E98F2C7211193FAD55453B97F53BB331",
+   "classified": null
+  },
+  {
+   "path": "/5E98F2C7211193FAD55453B97F53BB331_",
+   "classified": null
+  },
+  {
+   "path": "/5E98F2C7211193FAD55453B97F53BB331/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/61883.pdb/5E296274A73E435550597104286D122C1/61883.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/61883.pdb/5E296274A73E435550597104286D122C1/61883.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/61883.pdb/5E296274A73E435550597104286D122C1/61883.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/61883.pdb/5E296274A73E435550597104286D122C1/61883.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/61883.pdb/5E296274A73E435550597104286D122C1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/61883.pdb/5E296274A73E435550597104286D122C1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/67AB1DC8BA6FD49E52289A79460C28DB1",
+   "classified": null
+  },
+  {
+   "path": "/67AB1DC8BA6FD49E52289A79460C28DB1_",
+   "classified": null
+  },
+  {
+   "path": "/67AB1DC8BA6FD49E52289A79460C28DB1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb/7B9997B39B9687CC4588E0BB0496DC771/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb/7B9997B39B9687CC4588E0BB0496DC771/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb/7B9997B39B9687CC4588E0BB0496DC771/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb/7B9997B39B9687CC4588E0BB0496DC771/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb/7B9997B39B9687CC4588E0BB0496DC771/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/69fe178f-26e7-43a9-aa7d-2b616b672dde_EventLogService.pdb/7B9997B39B9687CC4588E0BB0496DC771/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb/AE6931108602E562402F4292B29169BF1/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb/AE6931108602E562402F4292B29169BF1/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb/AE6931108602E562402F4292B29169BF1/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb/AE6931108602E562402F4292B29169BF1/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb/AE6931108602E562402F4292B29169BF1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/6bea57fb-8dfb-4177-9ae8-42e8b3529933_RuntimeDeviceInstall.pdb/AE6931108602E562402F4292B29169BF1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/6CBAF1E8E610A2B2BCCBDD96493243FE1",
+   "classified": null
+  },
+  {
+   "path": "/6CBAF1E8E610A2B2BCCBDD96493243FE1_",
+   "classified": null
+  },
+  {
+   "path": "/6CBAF1E8E610A2B2BCCBDD96493243FE1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/6E5B7E591FF29E3E6CD2EF1F09E99E541",
+   "classified": null
+  },
+  {
+   "path": "/6E5B7E591FF29E3E6CD2EF1F09E99E541_",
+   "classified": null
+  },
+  {
+   "path": "/6E5B7E591FF29E3E6CD2EF1F09E99E541/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/6F6926364C85C84B262038CF34ABAB4F1",
+   "classified": null
+  },
+  {
+   "path": "/6F6926364C85C84B262038CF34ABAB4F1_",
+   "classified": null
+  },
+  {
+   "path": "/6F6926364C85C84B262038CF34ABAB4F1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/705BB819E9DFC61BEE6749945CC1D85A1",
+   "classified": null
+  },
+  {
+   "path": "/705BB819E9DFC61BEE6749945CC1D85A1_",
+   "classified": null
+  },
+  {
+   "path": "/705BB819E9DFC61BEE6749945CC1D85A1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/758E31A5B6CCB6E4B711DC81A0249E7F1",
+   "classified": null
+  },
+  {
+   "path": "/758E31A5B6CCB6E4B711DC81A0249E7F1_",
+   "classified": null
+  },
+  {
+   "path": "/758E31A5B6CCB6E4B711DC81A0249E7F1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/7C6DE021B15249096844DAC9EF20A29F1",
+   "classified": null
+  },
+  {
+   "path": "/7C6DE021B15249096844DAC9EF20A29F1_",
+   "classified": null
+  },
+  {
+   "path": "/7C6DE021B15249096844DAC9EF20A29F1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/8B362FB7172006C84B3F92206463C2001",
+   "classified": null
+  },
+  {
+   "path": "/8B362FB7172006C84B3F92206463C2001_",
+   "classified": null
+  },
+  {
+   "path": "/8B362FB7172006C84B3F92206463C2001/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/98B2C42BE3C539D8098667952BFA4BF41",
+   "classified": null
+  },
+  {
+   "path": "/98B2C42BE3C539D8098667952BFA4BF41_",
+   "classified": null
+  },
+  {
+   "path": "/98B2C42BE3C539D8098667952BFA4BF41/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/9A6951D573B2CD3E33659314CBD44F8F1",
+   "classified": null
+  },
+  {
+   "path": "/9A6951D573B2CD3E33659314CBD44F8F1_",
+   "classified": null
+  },
+  {
+   "path": "/9A6951D573B2CD3E33659314CBD44F8F1/.src.zip",
+   "classified": null
+  },
+  {
+   "path": "/AADAuthHelper.pdb/2FFA39F0D5CED8183880B34131090D9D1/AADAuthHelper.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADAuthHelper.pdb/2FFA39F0D5CED8183880B34131090D9D1/AADAuthHelper.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADAuthHelper.pdb/2FFA39F0D5CED8183880B34131090D9D1/AADAuthHelper.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADAuthHelper.pdb/2FFA39F0D5CED8183880B34131090D9D1/AADAuthHelper.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADAuthHelper.pdb/2FFA39F0D5CED8183880B34131090D9D1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADAuthHelper.pdb/2FFA39F0D5CED8183880B34131090D9D1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADAuthHelper.pdb/ED1E7C1A786D2BFA332F6052A5A9BFFA1/AADAuthHelper.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADAuthHelper.pdb/ED1E7C1A786D2BFA332F6052A5A9BFFA1/AADAuthHelper.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADAuthHelper.pdb/ED1E7C1A786D2BFA332F6052A5A9BFFA1/AADAuthHelper.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADAuthHelper.pdb/ED1E7C1A786D2BFA332F6052A5A9BFFA1/AADAuthHelper.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADAuthHelper.pdb/ED1E7C1A786D2BFA332F6052A5A9BFFA1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADAuthHelper.pdb/ED1E7C1A786D2BFA332F6052A5A9BFFA1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadCloudAP.pdb/4F4FCF780148FBBBA4D1CBA022F61C511/aadCloudAP.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadCloudAP.pdb/4F4FCF780148FBBBA4D1CBA022F61C511/aadCloudAP.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadCloudAP.pdb/7CF586E2C5017342558AD6EABA3232271/aadCloudAP.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadCloudAP.pdb/7CF586E2C5017342558AD6EABA3232271/aadCloudAP.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadCloudAP.pdb/7CF586E2C5017342558AD6EABA3232271/aadCloudAP.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadCloudAP.pdb/7CF586E2C5017342558AD6EABA3232271/aadCloudAP.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadCloudAP.pdb/7CF586E2C5017342558AD6EABA3232271/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadCloudAP.pdb/7CF586E2C5017342558AD6EABA3232271/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadCloudAP.pdb/FEE1FDD0EA5784BF6FA3AE5093B4A1291/aadCloudAP.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadCloudAP.pdb/FEE1FDD0EA5784BF6FA3AE5093B4A1291/aadCloudAP.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADJCSP.pdb/757E9D861FD9DA19FE640A8BF626C7DF1/AADJCSP.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADJCSP.pdb/757E9D861FD9DA19FE640A8BF626C7DF1/AADJCSP.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADJCSP.pdb/757E9D861FD9DA19FE640A8BF626C7DF1/AADJCSP.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADJCSP.pdb/757E9D861FD9DA19FE640A8BF626C7DF1/AADJCSP.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AADJCSP.pdb/757E9D861FD9DA19FE640A8BF626C7DF1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AADJCSP.pdb/757E9D861FD9DA19FE640A8BF626C7DF1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadtb.pdb/103F79C34A27CEFDA98F42C3E507ED4F1/aadtb.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadtb.pdb/103F79C34A27CEFDA98F42C3E507ED4F1/aadtb.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadtb.pdb/103F79C34A27CEFDA98F42C3E507ED4F1/aadtb.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadtb.pdb/103F79C34A27CEFDA98F42C3E507ED4F1/aadtb.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadtb.pdb/103F79C34A27CEFDA98F42C3E507ED4F1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadtb.pdb/103F79C34A27CEFDA98F42C3E507ED4F1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadtb.pdb/824ADB30D7D71217AB736236DE61DEC61/aadtb.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadtb.pdb/824ADB30D7D71217AB736236DE61DEC61/aadtb.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadtb.pdb/824ADB30D7D71217AB736236DE61DEC61/aadtb.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadtb.pdb/824ADB30D7D71217AB736236DE61DEC61/aadtb.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadtb.pdb/824ADB30D7D71217AB736236DE61DEC61/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadtb.pdb/824ADB30D7D71217AB736236DE61DEC61/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/30E1632C6E137DFC7A396DE33311DAC61/aadWamExtension.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/30E1632C6E137DFC7A396DE33311DAC61/aadWamExtension.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/CDAFE913349A2474EC5842BEF4FA7E561/aadWamExtension.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/CDAFE913349A2474EC5842BEF4FA7E561/aadWamExtension.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/CDAFE913349A2474EC5842BEF4FA7E561/aadWamExtension.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/CDAFE913349A2474EC5842BEF4FA7E561/aadWamExtension.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/CDAFE913349A2474EC5842BEF4FA7E561/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/CDAFE913349A2474EC5842BEF4FA7E561/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/DF4B79489F08665B4176CB1FD3592F051/aadWamExtension.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/DF4B79489F08665B4176CB1FD3592F051/aadWamExtension.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/F545E7A925E1DB1BE097ADBE0330045F1/aadWamExtension.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/F545E7A925E1DB1BE097ADBE0330045F1/aadWamExtension.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/F545E7A925E1DB1BE097ADBE0330045F1/aadWamExtension.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/F545E7A925E1DB1BE097ADBE0330045F1/aadWamExtension.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aadWamExtension.pdb/F545E7A925E1DB1BE097ADBE0330045F1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aadWamExtension.pdb/F545E7A925E1DB1BE097ADBE0330045F1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AarSvc.pdb/3CA5D801B3194A8A0E646322A2B180DA1/AarSvc.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AarSvc.pdb/3CA5D801B3194A8A0E646322A2B180DA1/AarSvc.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AarSvc.pdb/3CA5D801B3194A8A0E646322A2B180DA1/AarSvc.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AarSvc.pdb/3CA5D801B3194A8A0E646322A2B180DA1/AarSvc.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AarSvc.pdb/3CA5D801B3194A8A0E646322A2B180DA1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AarSvc.pdb/3CA5D801B3194A8A0E646322A2B180DA1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AarSvc.pdb/FF422CB7EF977536D768C4796F2D603B1/AarSvc.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AarSvc.pdb/FF422CB7EF977536D768C4796F2D603B1/AarSvc.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AarSvc.pdb/FF422CB7EF977536D768C4796F2D603B1/AarSvc.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AarSvc.pdb/FF422CB7EF977536D768C4796F2D603B1/AarSvc.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AarSvc.pdb/FF422CB7EF977536D768C4796F2D603B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AarSvc.pdb/FF422CB7EF977536D768C4796F2D603B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboutSettingsHandlers.pdb/873225E468CF275993190AF54C9A52DE1/AboutSettingsHandlers.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboutSettingsHandlers.pdb/873225E468CF275993190AF54C9A52DE1/AboutSettingsHandlers.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboutSettingsHandlers.pdb/873225E468CF275993190AF54C9A52DE1/AboutSettingsHandlers.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboutSettingsHandlers.pdb/873225E468CF275993190AF54C9A52DE1/AboutSettingsHandlers.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboutSettingsHandlers.pdb/873225E468CF275993190AF54C9A52DE1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboutSettingsHandlers.pdb/873225E468CF275993190AF54C9A52DE1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboutSettingsHandlers.pdb/94890F7DCF8571F965CE01A67CA7872A1/AboutSettingsHandlers.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboutSettingsHandlers.pdb/94890F7DCF8571F965CE01A67CA7872A1/AboutSettingsHandlers.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboveLockAppHost.pdb/66D131D6C27CC820F8502BB32AB1F1B91/AboveLockAppHost.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboveLockAppHost.pdb/66D131D6C27CC820F8502BB32AB1F1B91/AboveLockAppHost.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboveLockAppHost.pdb/66D131D6C27CC820F8502BB32AB1F1B91/AboveLockAppHost.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboveLockAppHost.pdb/66D131D6C27CC820F8502BB32AB1F1B91/AboveLockAppHost.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboveLockAppHost.pdb/66D131D6C27CC820F8502BB32AB1F1B91/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboveLockAppHost.pdb/66D131D6C27CC820F8502BB32AB1F1B91/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboveLockAppHost.pdb/D92710E5BFFDA3C70155EED968A3896E1/AboveLockAppHost.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboveLockAppHost.pdb/D92710E5BFFDA3C70155EED968A3896E1/AboveLockAppHost.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboveLockAppHost.pdb/F725EB80CE370BF89A18B82FDADD2D641/AboveLockAppHost.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboveLockAppHost.pdb/F725EB80CE370BF89A18B82FDADD2D641/AboveLockAppHost.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboveLockAppHost.pdb/F725EB80CE370BF89A18B82FDADD2D641/AboveLockAppHost.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboveLockAppHost.pdb/F725EB80CE370BF89A18B82FDADD2D641/AboveLockAppHost.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AboveLockAppHost.pdb/F725EB80CE370BF89A18B82FDADD2D641/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AboveLockAppHost.pdb/F725EB80CE370BF89A18B82FDADD2D641/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/abseil_dll.pdb/367DB07CA6C74E69A3BB7C5B33122EC21/abseil_dll.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/abseil_dll.pdb/367DB07CA6C74E69A3BB7C5B33122EC21/abseil_dll.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/abseil_dll.pdb/367DB07CA6C74E69A3BB7C5B33122EC21/abseil_dll.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/abseil_dll.pdb/367DB07CA6C74E69A3BB7C5B33122EC21/abseil_dll.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/abseil_dll.pdb/367DB07CA6C74E69A3BB7C5B33122EC21/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/abseil_dll.pdb/367DB07CA6C74E69A3BB7C5B33122EC21/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/0E0B43A2543C46469E700CD32A785D081/AccCheckConsole.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/0E0B43A2543C46469E700CD32A785D081/AccCheckConsole.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/0E0B43A2543C46469E700CD32A785D081/AccCheckConsole.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/0E0B43A2543C46469E700CD32A785D081/AccCheckConsole.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/0E0B43A2543C46469E700CD32A785D081/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/0E0B43A2543C46469E700CD32A785D081/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/B2060B2DE1A34C54A4484B15B9EDA8301/AccCheckConsole.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/B2060B2DE1A34C54A4484B15B9EDA8301/AccCheckConsole.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/B2060B2DE1A34C54A4484B15B9EDA8301/AccCheckConsole.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/B2060B2DE1A34C54A4484B15B9EDA8301/AccCheckConsole.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/B2060B2DE1A34C54A4484B15B9EDA8301/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/B2060B2DE1A34C54A4484B15B9EDA8301/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/D908DE72348A428C9CB4C25EA1435D291/AccCheckConsole.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/D908DE72348A428C9CB4C25EA1435D291/AccCheckConsole.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/D908DE72348A428C9CB4C25EA1435D291/AccCheckConsole.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/D908DE72348A428C9CB4C25EA1435D291/AccCheckConsole.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckConsole.pdb/D908DE72348A428C9CB4C25EA1435D291/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckConsole.pdb/D908DE72348A428C9CB4C25EA1435D291/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/072E55EA4BBB44F59D9C69C91C68E2251/AccCheck.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/072E55EA4BBB44F59D9C69C91C68E2251/AccCheck.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/072E55EA4BBB44F59D9C69C91C68E2251/AccCheck.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/072E55EA4BBB44F59D9C69C91C68E2251/AccCheck.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/072E55EA4BBB44F59D9C69C91C68E2251/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/072E55EA4BBB44F59D9C69C91C68E2251/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/9D4F7774E4A144CFA224C9FF2C5777701/AccCheck.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/9D4F7774E4A144CFA224C9FF2C5777701/AccCheck.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/9D4F7774E4A144CFA224C9FF2C5777701/AccCheck.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/9D4F7774E4A144CFA224C9FF2C5777701/AccCheck.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/9D4F7774E4A144CFA224C9FF2C5777701/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/9D4F7774E4A144CFA224C9FF2C5777701/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/B6734B7C730E47209511C469B58AB26E1/AccCheck.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/B6734B7C730E47209511C469B58AB26E1/AccCheck.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/B6734B7C730E47209511C469B58AB26E1/AccCheck.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/B6734B7C730E47209511C469B58AB26E1/AccCheck.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheck.pdb/B6734B7C730E47209511C469B58AB26E1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheck.pdb/B6734B7C730E47209511C469B58AB26E1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/5F79044D044743B19CFF7308CC753F0B1/AccCheckUI.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/5F79044D044743B19CFF7308CC753F0B1/AccCheckUI.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/5F79044D044743B19CFF7308CC753F0B1/AccCheckUI.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/5F79044D044743B19CFF7308CC753F0B1/AccCheckUI.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/5F79044D044743B19CFF7308CC753F0B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/5F79044D044743B19CFF7308CC753F0B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/9A867D26FD9A496AA21D62739C8FFA5E1/AccCheckUI.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/9A867D26FD9A496AA21D62739C8FFA5E1/AccCheckUI.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/9A867D26FD9A496AA21D62739C8FFA5E1/AccCheckUI.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/9A867D26FD9A496AA21D62739C8FFA5E1/AccCheckUI.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/9A867D26FD9A496AA21D62739C8FFA5E1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/9A867D26FD9A496AA21D62739C8FFA5E1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/D921F8942FF24D58A9C93FBFFF0DE1211/AccCheckUI.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/D921F8942FF24D58A9C93FBFFF0DE1211/AccCheckUI.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/D921F8942FF24D58A9C93FBFFF0DE1211/AccCheckUI.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/D921F8942FF24D58A9C93FBFFF0DE1211/AccCheckUI.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccCheckUI.pdb/D921F8942FF24D58A9C93FBFFF0DE1211/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccCheckUI.pdb/D921F8942FF24D58A9C93FBFFF0DE1211/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibilityCpl.pdb/3E9BC2FE42240BDE52C79610F6BE6D1E1/AccessibilityCpl.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibilityCpl.pdb/3E9BC2FE42240BDE52C79610F6BE6D1E1/AccessibilityCpl.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibilityCpl.pdb/3E9BC2FE42240BDE52C79610F6BE6D1E1/AccessibilityCpl.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibilityCpl.pdb/3E9BC2FE42240BDE52C79610F6BE6D1E1/AccessibilityCpl.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibilityCpl.pdb/3E9BC2FE42240BDE52C79610F6BE6D1E1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibilityCpl.pdb/3E9BC2FE42240BDE52C79610F6BE6D1E1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibilityCpl.pdb/89E2488428FBCBC4FE5EDCE8098D2DA41/AccessibilityCpl.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibilityCpl.pdb/89E2488428FBCBC4FE5EDCE8098D2DA41/AccessibilityCpl.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibilityCpl.pdb/89E2488428FBCBC4FE5EDCE8098D2DA41/AccessibilityCpl.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibilityCpl.pdb/89E2488428FBCBC4FE5EDCE8098D2DA41/AccessibilityCpl.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibilityCpl.pdb/89E2488428FBCBC4FE5EDCE8098D2DA41/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibilityCpl.pdb/89E2488428FBCBC4FE5EDCE8098D2DA41/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Accessibility.ni.pdb/FBF3CC907E8813B2EC71100C35D10BC71/Accessibility.ni.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Accessibility.ni.pdb/FBF3CC907E8813B2EC71100C35D10BC71/Accessibility.ni.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Accessibility.ni.pdb/FBF3CC907E8813B2EC71100C35D10BC71/Accessibility.ni.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Accessibility.ni.pdb/FBF3CC907E8813B2EC71100C35D10BC71/Accessibility.ni.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Accessibility.ni.pdb/FBF3CC907E8813B2EC71100C35D10BC71/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Accessibility.ni.pdb/FBF3CC907E8813B2EC71100C35D10BC71/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibleMarshal.pdb/428B0886F320DA134C4C44205044422E1/AccessibleMarshal.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibleMarshal.pdb/428B0886F320DA134C4C44205044422E1/AccessibleMarshal.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibleMarshal.pdb/428B0886F320DA134C4C44205044422E1/AccessibleMarshal.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibleMarshal.pdb/428B0886F320DA134C4C44205044422E1/AccessibleMarshal.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibleMarshal.pdb/428B0886F320DA134C4C44205044422E1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibleMarshal.pdb/428B0886F320DA134C4C44205044422E1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibleMarshal.pdb/F94FFC8CE2B4D6324C4C44205044422E1/AccessibleMarshal.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibleMarshal.pdb/F94FFC8CE2B4D6324C4C44205044422E1/AccessibleMarshal.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccessibleMarshal.pdb/F94FFC8CE2B4D6324C4C44205044422E1/AccessibleMarshal.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccessibleMarshal.pdb/F94FFC8CE2B4D6324C4C44205044422E1/AccessibleMarshal.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/2877FC29DD20BFC27A98EFDEC6881AC31/AccEvent.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/2877FC29DD20BFC27A98EFDEC6881AC31/AccEvent.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/2877FC29DD20BFC27A98EFDEC6881AC31/AccEvent.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/2877FC29DD20BFC27A98EFDEC6881AC31/AccEvent.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/2877FC29DD20BFC27A98EFDEC6881AC31/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/2877FC29DD20BFC27A98EFDEC6881AC31/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/3F3482026AFB017574D2F048A232D01C1/AccEvent.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/3F3482026AFB017574D2F048A232D01C1/AccEvent.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/3F3482026AFB017574D2F048A232D01C1/AccEvent.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/3F3482026AFB017574D2F048A232D01C1/AccEvent.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/3F3482026AFB017574D2F048A232D01C1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/3F3482026AFB017574D2F048A232D01C1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/9389892D3DC82CAD4879E95E3FB419B61/AccEvent.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/9389892D3DC82CAD4879E95E3FB419B61/AccEvent.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/9389892D3DC82CAD4879E95E3FB419B61/AccEvent.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/9389892D3DC82CAD4879E95E3FB419B61/AccEvent.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccEvent.pdb/9389892D3DC82CAD4879E95E3FB419B61/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccEvent.pdb/9389892D3DC82CAD4879E95E3FB419B61/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountAccessor.pdb/03460666F6C872B5E5EEF87682981DA51/AccountAccessor.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountAccessor.pdb/03460666F6C872B5E5EEF87682981DA51/AccountAccessor.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountAccessor.pdb/03460666F6C872B5E5EEF87682981DA51/AccountAccessor.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountAccessor.pdb/03460666F6C872B5E5EEF87682981DA51/AccountAccessor.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountAccessor.pdb/03460666F6C872B5E5EEF87682981DA51/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountAccessor.pdb/03460666F6C872B5E5EEF87682981DA51/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountAccessor.pdb/615AF375AB573C4C311AF26A587595B01/AccountAccessor.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountAccessor.pdb/615AF375AB573C4C311AF26A587595B01/AccountAccessor.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountAccessor.pdb/615AF375AB573C4C311AF26A587595B01/AccountAccessor.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountAccessor.pdb/615AF375AB573C4C311AF26A587595B01/AccountAccessor.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountAccessor.pdb/615AF375AB573C4C311AF26A587595B01/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountAccessor.pdb/615AF375AB573C4C311AF26A587595B01/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountHealth.pdb/123F1F6ECEAA5DD2ACB4A87BAEB159121/AccountHealth.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountHealth.pdb/123F1F6ECEAA5DD2ACB4A87BAEB159121/AccountHealth.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountHealth.pdb/123F1F6ECEAA5DD2ACB4A87BAEB159121/AccountHealth.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountHealth.pdb/123F1F6ECEAA5DD2ACB4A87BAEB159121/AccountHealth.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountHealth.pdb/123F1F6ECEAA5DD2ACB4A87BAEB159121/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountHealth.pdb/123F1F6ECEAA5DD2ACB4A87BAEB159121/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountsRT.pdb/306CEDC14B775E963B30F01459A44B8D1/AccountsRT.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountsRT.pdb/306CEDC14B775E963B30F01459A44B8D1/AccountsRT.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountsRT.pdb/306CEDC14B775E963B30F01459A44B8D1/AccountsRT.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountsRT.pdb/306CEDC14B775E963B30F01459A44B8D1/AccountsRT.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountsRT.pdb/306CEDC14B775E963B30F01459A44B8D1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountsRT.pdb/306CEDC14B775E963B30F01459A44B8D1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountsRT.pdb/CCD3D821665081D6FEAB27C9B75065171/AccountsRT.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountsRT.pdb/CCD3D821665081D6FEAB27C9B75065171/AccountsRT.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountsRT.pdb/CCD3D821665081D6FEAB27C9B75065171/AccountsRT.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountsRT.pdb/CCD3D821665081D6FEAB27C9B75065171/AccountsRT.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AccountsRT.pdb/CCD3D821665081D6FEAB27C9B75065171/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AccountsRT.pdb/CCD3D821665081D6FEAB27C9B75065171/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACE-BASE.pdb/2CF7BBDBE16444EBA9291CB5FCF1C1681/ACE-BASE.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACE-BASE.pdb/2CF7BBDBE16444EBA9291CB5FCF1C1681/ACE-BASE.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACE-BASE.pdb/2CF7BBDBE16444EBA9291CB5FCF1C1681/ACE-BASE.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACE-BASE.pdb/2CF7BBDBE16444EBA9291CB5FCF1C1681/ACE-BASE.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACE-BASE.pdb/2CF7BBDBE16444EBA9291CB5FCF1C1681/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACE-BASE.pdb/2CF7BBDBE16444EBA9291CB5FCF1C1681/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcGenral.pdb/81F799B6AEA51DD01D0E4277F56DC8301/AcGenral.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcGenral.pdb/81F799B6AEA51DD01D0E4277F56DC8301/AcGenral.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcGenral.pdb/81F799B6AEA51DD01D0E4277F56DC8301/AcGenral.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcGenral.pdb/81F799B6AEA51DD01D0E4277F56DC8301/AcGenral.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcGenral.pdb/81F799B6AEA51DD01D0E4277F56DC8301/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcGenral.pdb/81F799B6AEA51DD01D0E4277F56DC8301/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcGenral.pdb/DAE2AC47FD98B6BB170D306041C468C51/AcGenral.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcGenral.pdb/DAE2AC47FD98B6BB170D306041C468C51/AcGenral.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcGenral.pdb/DAE2AC47FD98B6BB170D306041C468C51/AcGenral.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcGenral.pdb/DAE2AC47FD98B6BB170D306041C468C51/AcGenral.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcGenral.pdb/DAE2AC47FD98B6BB170D306041C468C51/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcGenral.pdb/DAE2AC47FD98B6BB170D306041C468C51/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ackutil.pdb/752DC15C4FD62DA7F20772086CB184EA1/ackutil.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ackutil.pdb/752DC15C4FD62DA7F20772086CB184EA1/ackutil.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ackutil.pdb/752DC15C4FD62DA7F20772086CB184EA1/ackutil.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ackutil.pdb/752DC15C4FD62DA7F20772086CB184EA1/ackutil.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ackutil.pdb/752DC15C4FD62DA7F20772086CB184EA1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ackutil.pdb/752DC15C4FD62DA7F20772086CB184EA1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcLayers.pdb/96899188E5CCA51F7F022F7615FBE1F41/AcLayers.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcLayers.pdb/96899188E5CCA51F7F022F7615FBE1F41/AcLayers.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcLayers.pdb/96899188E5CCA51F7F022F7615FBE1F41/AcLayers.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcLayers.pdb/96899188E5CCA51F7F022F7615FBE1F41/AcLayers.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcLayers.pdb/96899188E5CCA51F7F022F7615FBE1F41/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcLayers.pdb/96899188E5CCA51F7F022F7615FBE1F41/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcLayers.pdb/B4AE94F41CD2C59FAA45C3DF5A87065C1/AcLayers.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcLayers.pdb/B4AE94F41CD2C59FAA45C3DF5A87065C1/AcLayers.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcLayers.pdb/B4AE94F41CD2C59FAA45C3DF5A87065C1/AcLayers.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcLayers.pdb/B4AE94F41CD2C59FAA45C3DF5A87065C1/AcLayers.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcLayers.pdb/B4AE94F41CD2C59FAA45C3DF5A87065C1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcLayers.pdb/B4AE94F41CD2C59FAA45C3DF5A87065C1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acledit.pdb/5505D802209E4884DAA384A8C2677DB81/acledit.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acledit.pdb/5505D802209E4884DAA384A8C2677DB81/acledit.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acledit.pdb/5505D802209E4884DAA384A8C2677DB81/acledit.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acledit.pdb/5505D802209E4884DAA384A8C2677DB81/acledit.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acledit.pdb/5505D802209E4884DAA384A8C2677DB81/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acledit.pdb/5505D802209E4884DAA384A8C2677DB81/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acledit.pdb/F5ED612978763C49D4B6780D214114871/acledit.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acledit.pdb/F5ED612978763C49D4B6780D214114871/acledit.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acledit.pdb/F5ED612978763C49D4B6780D214114871/acledit.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acledit.pdb/F5ED612978763C49D4B6780D214114871/acledit.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acledit.pdb/F5ED612978763C49D4B6780D214114871/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acledit.pdb/F5ED612978763C49D4B6780D214114871/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aclui.pdb/8C7099AA063A911E53F7144C0032EC041/aclui.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aclui.pdb/8C7099AA063A911E53F7144C0032EC041/aclui.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aclui.pdb/8C7099AA063A911E53F7144C0032EC041/aclui.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aclui.pdb/8C7099AA063A911E53F7144C0032EC041/aclui.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aclui.pdb/8C7099AA063A911E53F7144C0032EC041/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aclui.pdb/8C7099AA063A911E53F7144C0032EC041/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aclui.pdb/B950026ABD30557E9408DD0641A5BA691/aclui.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aclui.pdb/B950026ABD30557E9408DD0641A5BA691/aclui.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aclui.pdb/B950026ABD30557E9408DD0641A5BA691/aclui.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aclui.pdb/B950026ABD30557E9408DD0641A5BA691/aclui.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/aclui.pdb/B950026ABD30557E9408DD0641A5BA691/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/aclui.pdb/B950026ABD30557E9408DD0641A5BA691/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acmigration.pdb/A0A98412829782B6976119196F7497B71/acmigration.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acmigration.pdb/A0A98412829782B6976119196F7497B71/acmigration.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acmigration.pdb/A0A98412829782B6976119196F7497B71/acmigration.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acmigration.pdb/A0A98412829782B6976119196F7497B71/acmigration.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acmigration.pdb/A0A98412829782B6976119196F7497B71/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acmigration.pdb/A0A98412829782B6976119196F7497B71/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACPBackgroundManagerPolicy.pdb/968D93639B64DBC6887B804EDB9518901/ACPBackgroundManagerPolicy.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACPBackgroundManagerPolicy.pdb/968D93639B64DBC6887B804EDB9518901/ACPBackgroundManagerPolicy.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACPBackgroundManagerPolicy.pdb/968D93639B64DBC6887B804EDB9518901/ACPBackgroundManagerPolicy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACPBackgroundManagerPolicy.pdb/968D93639B64DBC6887B804EDB9518901/ACPBackgroundManagerPolicy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACPBackgroundManagerPolicy.pdb/968D93639B64DBC6887B804EDB9518901/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACPBackgroundManagerPolicy.pdb/968D93639B64DBC6887B804EDB9518901/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACPBackgroundManagerPolicy.pdb/F69A82EC645B973BEAB5AF5809B774811/ACPBackgroundManagerPolicy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACPBackgroundManagerPolicy.pdb/F69A82EC645B973BEAB5AF5809B774811/ACPBackgroundManagerPolicy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpials.pdb/0684A24943C95D61260B1F57D4A9BBC41/acpials.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpials.pdb/0684A24943C95D61260B1F57D4A9BBC41/acpials.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpials.pdb/0684A24943C95D61260B1F57D4A9BBC41/acpials.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpials.pdb/0684A24943C95D61260B1F57D4A9BBC41/acpials.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpials.pdb/0684A24943C95D61260B1F57D4A9BBC41/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpials.pdb/0684A24943C95D61260B1F57D4A9BBC41/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcpiAudioCompositor.pdb/C1AD9F91E51B58DE56CADAF8156789FF1/AcpiAudioCompositor.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcpiAudioCompositor.pdb/C1AD9F91E51B58DE56CADAF8156789FF1/AcpiAudioCompositor.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcpiAudioCompositor.pdb/C1AD9F91E51B58DE56CADAF8156789FF1/AcpiAudioCompositor.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcpiAudioCompositor.pdb/C1AD9F91E51B58DE56CADAF8156789FF1/AcpiAudioCompositor.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcpiAudioCompositor.pdb/C1AD9F91E51B58DE56CADAF8156789FF1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcpiAudioCompositor.pdb/C1AD9F91E51B58DE56CADAF8156789FF1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcpiDev.pdb/9D1141799B6342F9A73FC6B01BE43CDA1/AcpiDev.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcpiDev.pdb/9D1141799B6342F9A73FC6B01BE43CDA1/AcpiDev.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcpiDev.pdb/9D1141799B6342F9A73FC6B01BE43CDA1/AcpiDev.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcpiDev.pdb/9D1141799B6342F9A73FC6B01BE43CDA1/AcpiDev.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcpiDev.pdb/9D1141799B6342F9A73FC6B01BE43CDA1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcpiDev.pdb/9D1141799B6342F9A73FC6B01BE43CDA1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpiex.pdb/8BDCD3C70E403F97133F83B492895D271/acpiex.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpiex.pdb/8BDCD3C70E403F97133F83B492895D271/acpiex.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpiex.pdb/A674EA70871077D9F03424409450315B1/acpiex.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpiex.pdb/A674EA70871077D9F03424409450315B1/acpiex.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpiex.pdb/A674EA70871077D9F03424409450315B1/acpiex.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpiex.pdb/A674EA70871077D9F03424409450315B1/acpiex.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpiex.pdb/A674EA70871077D9F03424409450315B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpiex.pdb/A674EA70871077D9F03424409450315B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpiex.sys/D5947B552b000/acpiex.sys",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpiex.sys/D5947B552b000/acpiex.sys",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/0D5BCA06704150DA7770605AD5DD64AC1/acpikd.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/0D5BCA06704150DA7770605AD5DD64AC1/acpikd.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/0D5BCA06704150DA7770605AD5DD64AC1/acpikd.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/0D5BCA06704150DA7770605AD5DD64AC1/acpikd.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/0D5BCA06704150DA7770605AD5DD64AC1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/0D5BCA06704150DA7770605AD5DD64AC1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/22B918703E2FA05D0A7A3569A687662B1/acpikd.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/22B918703E2FA05D0A7A3569A687662B1/acpikd.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/22B918703E2FA05D0A7A3569A687662B1/acpikd.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/22B918703E2FA05D0A7A3569A687662B1/acpikd.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/22B918703E2FA05D0A7A3569A687662B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/22B918703E2FA05D0A7A3569A687662B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/F3F8ADADFFA6E2BFFAB750C3178736311/acpikd.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/F3F8ADADFFA6E2BFFAB750C3178736311/acpikd.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/F3F8ADADFFA6E2BFFAB750C3178736311/acpikd.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/F3F8ADADFFA6E2BFFAB750C3178736311/acpikd.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpikd.pdb/F3F8ADADFFA6E2BFFAB750C3178736311/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpikd.pdb/F3F8ADADFFA6E2BFFAB750C3178736311/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpipagr.pdb/3C9186DDEA0D0CF53895814D3C748E781/acpipagr.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpipagr.pdb/3C9186DDEA0D0CF53895814D3C748E781/acpipagr.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpipagr.pdb/3C9186DDEA0D0CF53895814D3C748E781/acpipagr.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpipagr.pdb/3C9186DDEA0D0CF53895814D3C748E781/acpipagr.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpipagr.pdb/3C9186DDEA0D0CF53895814D3C748E781/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpipagr.pdb/3C9186DDEA0D0CF53895814D3C748E781/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpi.pdb/1B64F722EE8B9140389B548EF9723E831/acpi.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpi.pdb/1B64F722EE8B9140389B548EF9723E831/acpi.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpi.pdb/1F44A6A649F9AA602CE662BA82D5EC461/acpi.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpi.pdb/1F44A6A649F9AA602CE662BA82D5EC461/acpi.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpi.pdb/1F44A6A649F9AA602CE662BA82D5EC461/acpi.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpi.pdb/1F44A6A649F9AA602CE662BA82D5EC461/acpi.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpi.pdb/1F44A6A649F9AA602CE662BA82D5EC461/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpi.pdb/1F44A6A649F9AA602CE662BA82D5EC461/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpi.pdb/6B67410C3E7AD59FB33A75847AB6795C1/acpi.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpi.pdb/6B67410C3E7AD59FB33A75847AB6795C1/acpi.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpipmi.pdb/6155B7CC0789A87A97D30414B30F3C2A1/acpipmi.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpipmi.pdb/6155B7CC0789A87A97D30414B30F3C2A1/acpipmi.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpipmi.pdb/6155B7CC0789A87A97D30414B30F3C2A1/acpipmi.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpipmi.pdb/6155B7CC0789A87A97D30414B30F3C2A1/acpipmi.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpipmi.pdb/6155B7CC0789A87A97D30414B30F3C2A1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpipmi.pdb/6155B7CC0789A87A97D30414B30F3C2A1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACPI.sys/258B43FCd6000/ACPI.sys",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACPI.sys/258B43FCd6000/ACPI.sys",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpitime.pdb/9B4FBD669F9F4671102CB00F5FFB5CCB1/acpitime.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpitime.pdb/9B4FBD669F9F4671102CB00F5FFB5CCB1/acpitime.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpitime.pdb/9B4FBD669F9F4671102CB00F5FFB5CCB1/acpitime.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpitime.pdb/9B4FBD669F9F4671102CB00F5FFB5CCB1/acpitime.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acpitime.pdb/9B4FBD669F9F4671102CB00F5FFB5CCB1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acpitime.pdb/9B4FBD669F9F4671102CB00F5FFB5CCB1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/48E9DA0C66F8E71D3C4F7B90AFBC2CAF1/acppage.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/48E9DA0C66F8E71D3C4F7B90AFBC2CAF1/acppage.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/48E9DA0C66F8E71D3C4F7B90AFBC2CAF1/acppage.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/48E9DA0C66F8E71D3C4F7B90AFBC2CAF1/acppage.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/48E9DA0C66F8E71D3C4F7B90AFBC2CAF1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/48E9DA0C66F8E71D3C4F7B90AFBC2CAF1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/4D6E9B03BE15ED0D44E44AFB2B91543B1/acppage.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/4D6E9B03BE15ED0D44E44AFB2B91543B1/acppage.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/4D6E9B03BE15ED0D44E44AFB2B91543B1/acppage.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/4D6E9B03BE15ED0D44E44AFB2B91543B1/acppage.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/4D6E9B03BE15ED0D44E44AFB2B91543B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/4D6E9B03BE15ED0D44E44AFB2B91543B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/4EF821D30B8FD573931458AE53DA93361/acppage.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/4EF821D30B8FD573931458AE53DA93361/acppage.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acppage.pdb/6F6274B3522FFA8EA486077F8A1753FA1/acppage.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acppage.pdb/6F6274B3522FFA8EA486077F8A1753FA1/acppage.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acproxy.pdb/5577778928C06347161894D26C8162121/acproxy.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acproxy.pdb/5577778928C06347161894D26C8162121/acproxy.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acproxy.pdb/5577778928C06347161894D26C8162121/acproxy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acproxy.pdb/5577778928C06347161894D26C8162121/acproxy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/acproxy.pdb/5577778928C06347161894D26C8162121/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/acproxy.pdb/5577778928C06347161894D26C8162121/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEHIDRemap.pdb/803CD2EA48084BB8BC77C99C85F933541/ACSEHIDRemap.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEHIDRemap.pdb/803CD2EA48084BB8BC77C99C85F933541/ACSEHIDRemap.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEHIDRemap.pdb/803CD2EA48084BB8BC77C99C85F933541/ACSEHIDRemap.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEHIDRemap.pdb/803CD2EA48084BB8BC77C99C85F933541/ACSEHIDRemap.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEHIDRemap.pdb/803CD2EA48084BB8BC77C99C85F933541/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEHIDRemap.pdb/803CD2EA48084BB8BC77C99C85F933541/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEHIDRemap.sys/68DB804E23000/ACSEHIDRemap.sy_",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEHIDRemap.sys/68DB804E23000/ACSEHIDRemap.sy_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEHIDRemap.sys/68DB804E23000/ACSEHIDRemap.sys",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEHIDRemap.sys/68DB804E23000/ACSEHIDRemap.sys",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEHIDRemap.sys/68DB804E23000/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEHIDRemap.sys/68DB804E23000/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEVirtualBus.pdb/83C81A41ADBF4FEC90B855C2749AC8991/ACSEVirtualBus.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEVirtualBus.pdb/83C81A41ADBF4FEC90B855C2749AC8991/ACSEVirtualBus.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEVirtualBus.pdb/83C81A41ADBF4FEC90B855C2749AC8991/ACSEVirtualBus.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEVirtualBus.pdb/83C81A41ADBF4FEC90B855C2749AC8991/ACSEVirtualBus.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEVirtualBus.pdb/83C81A41ADBF4FEC90B855C2749AC8991/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEVirtualBus.pdb/83C81A41ADBF4FEC90B855C2749AC8991/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEVirtualBus.sys/68DB8055d000/ACSEVirtualBus.sy_",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEVirtualBus.sys/68DB8055d000/ACSEVirtualBus.sy_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEVirtualBus.sys/68DB8055d000/ACSEVirtualBus.sys",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEVirtualBus.sys/68DB8055d000/ACSEVirtualBus.sys",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ACSEVirtualBus.sys/68DB8055d000/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ACSEVirtualBus.sys/68DB8055d000/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcSpecfc.pdb/49ABF4C5BAADF2A1B352D78AC6A2642B1/AcSpecfc.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcSpecfc.pdb/49ABF4C5BAADF2A1B352D78AC6A2642B1/AcSpecfc.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcSpecfc.pdb/49ABF4C5BAADF2A1B352D78AC6A2642B1/AcSpecfc.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcSpecfc.pdb/49ABF4C5BAADF2A1B352D78AC6A2642B1/AcSpecfc.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcSpecfc.pdb/49ABF4C5BAADF2A1B352D78AC6A2642B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcSpecfc.pdb/49ABF4C5BAADF2A1B352D78AC6A2642B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcSpecfc.pdb/ED4325033FA9CA4D57358B7CE89E01001/AcSpecfc.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcSpecfc.pdb/ED4325033FA9CA4D57358B7CE89E01001/AcSpecfc.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcSpecfc.pdb/ED4325033FA9CA4D57358B7CE89E01001/AcSpecfc.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcSpecfc.pdb/ED4325033FA9CA4D57358B7CE89E01001/AcSpecfc.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcSpecfc.pdb/ED4325033FA9CA4D57358B7CE89E01001/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcSpecfc.pdb/ED4325033FA9CA4D57358B7CE89E01001/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenterCPL.pdb/52F9C94A2BB00A67C2ABA486C48F83FF1/ActionCenterCPL.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenterCPL.pdb/52F9C94A2BB00A67C2ABA486C48F83FF1/ActionCenterCPL.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenterCPL.pdb/52F9C94A2BB00A67C2ABA486C48F83FF1/ActionCenterCPL.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenterCPL.pdb/52F9C94A2BB00A67C2ABA486C48F83FF1/ActionCenterCPL.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenterCPL.pdb/52F9C94A2BB00A67C2ABA486C48F83FF1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenterCPL.pdb/52F9C94A2BB00A67C2ABA486C48F83FF1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenterCPL.pdb/8D4FA5819AE68EC4182B44CDF4B75B191/ActionCenterCPL.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenterCPL.pdb/8D4FA5819AE68EC4182B44CDF4B75B191/ActionCenterCPL.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenterCPL.pdb/8D4FA5819AE68EC4182B44CDF4B75B191/ActionCenterCPL.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenterCPL.pdb/8D4FA5819AE68EC4182B44CDF4B75B191/ActionCenterCPL.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenterCPL.pdb/8D4FA5819AE68EC4182B44CDF4B75B191/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenterCPL.pdb/8D4FA5819AE68EC4182B44CDF4B75B191/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenter.pdb/7462066408DE215FFCE63AEF2F1C1F9B1/ActionCenter.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenter.pdb/7462066408DE215FFCE63AEF2F1C1F9B1/ActionCenter.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenter.pdb/7462066408DE215FFCE63AEF2F1C1F9B1/ActionCenter.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenter.pdb/7462066408DE215FFCE63AEF2F1C1F9B1/ActionCenter.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenter.pdb/7462066408DE215FFCE63AEF2F1C1F9B1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenter.pdb/7462066408DE215FFCE63AEF2F1C1F9B1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenter.pdb/83066B09645EC13D3205E5B3CD16F8381/ActionCenter.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenter.pdb/83066B09645EC13D3205E5B3CD16F8381/ActionCenter.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenter.pdb/87A763C7660E0175B50FB983AA2427BA1/ActionCenter.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenter.pdb/87A763C7660E0175B50FB983AA2427BA1/ActionCenter.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenter.pdb/87A763C7660E0175B50FB983AA2427BA1/ActionCenter.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenter.pdb/87A763C7660E0175B50FB983AA2427BA1/ActionCenter.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionCenter.pdb/87A763C7660E0175B50FB983AA2427BA1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionCenter.pdb/87A763C7660E0175B50FB983AA2427BA1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionQueue.pdb/6356E2DA106C8CDC6A05F703FD99E8C11/ActionQueue.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionQueue.pdb/6356E2DA106C8CDC6A05F703FD99E8C11/ActionQueue.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionQueue.pdb/6356E2DA106C8CDC6A05F703FD99E8C11/ActionQueue.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionQueue.pdb/6356E2DA106C8CDC6A05F703FD99E8C11/ActionQueue.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionQueue.pdb/6356E2DA106C8CDC6A05F703FD99E8C11/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionQueue.pdb/6356E2DA106C8CDC6A05F703FD99E8C11/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionsServer.pdb/7F7A7338F65B4ACEB3C2DDFF0B4108B12/ActionsServer.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionsServer.pdb/7F7A7338F65B4ACEB3C2DDFF0B4108B12/ActionsServer.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionsServer.pdb/7F7A7338F65B4ACEB3C2DDFF0B4108B12/ActionsServer.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionsServer.pdb/7F7A7338F65B4ACEB3C2DDFF0B4108B12/ActionsServer.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActionsServer.pdb/7F7A7338F65B4ACEB3C2DDFF0B4108B12/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActionsServer.pdb/7F7A7338F65B4ACEB3C2DDFF0B4108B12/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationClient.pdb/0D82489BB6EF64819691A212B30511F81/ActivationClient.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationClient.pdb/0D82489BB6EF64819691A212B30511F81/ActivationClient.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationClient.pdb/8B76C7827452775513446D4C837E468E1/ActivationClient.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationClient.pdb/8B76C7827452775513446D4C837E468E1/ActivationClient.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationClient.pdb/8B76C7827452775513446D4C837E468E1/ActivationClient.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationClient.pdb/8B76C7827452775513446D4C837E468E1/ActivationClient.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationClient.pdb/8B76C7827452775513446D4C837E468E1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationClient.pdb/8B76C7827452775513446D4C837E468E1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationClient.pdb/C1DAF28AB5732BCAFE81736FAE58CCE01/ActivationClient.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationClient.pdb/C1DAF28AB5732BCAFE81736FAE58CCE01/ActivationClient.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationClient.pdb/C1DAF28AB5732BCAFE81736FAE58CCE01/ActivationClient.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationClient.pdb/C1DAF28AB5732BCAFE81736FAE58CCE01/ActivationClient.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationClient.pdb/C1DAF28AB5732BCAFE81736FAE58CCE01/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationClient.pdb/C1DAF28AB5732BCAFE81736FAE58CCE01/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/08D964402374F742865AE6EC4FCBED751/ActivationManager.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/08D964402374F742865AE6EC4FCBED751/ActivationManager.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/08D964402374F742865AE6EC4FCBED751/ActivationManager.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/08D964402374F742865AE6EC4FCBED751/ActivationManager.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/08D964402374F742865AE6EC4FCBED751/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/08D964402374F742865AE6EC4FCBED751/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/980E3A7877FA015EB37AF5F5647AF1251/ActivationManager.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/980E3A7877FA015EB37AF5F5647AF1251/ActivationManager.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/C885056D30E6438EDD0AC2EAB1A5B9301/ActivationManager.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/C885056D30E6438EDD0AC2EAB1A5B9301/ActivationManager.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/C885056D30E6438EDD0AC2EAB1A5B9301/ActivationManager.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/C885056D30E6438EDD0AC2EAB1A5B9301/ActivationManager.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/C885056D30E6438EDD0AC2EAB1A5B9301/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/C885056D30E6438EDD0AC2EAB1A5B9301/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationManager.pdb/F19901A978B506F8C5EE52FCE38586BD1/ActivationManager.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationManager.pdb/F19901A978B506F8C5EE52FCE38586BD1/ActivationManager.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationVDev.pdb/EE51816D1D223EFC0C3001DA7D21CDD11/ActivationVDev.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationVDev.pdb/EE51816D1D223EFC0C3001DA7D21CDD11/ActivationVDev.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationVDev.pdb/EE51816D1D223EFC0C3001DA7D21CDD11/ActivationVDev.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationVDev.pdb/EE51816D1D223EFC0C3001DA7D21CDD11/ActivationVDev.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActivationVDev.pdb/EE51816D1D223EFC0C3001DA7D21CDD11/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActivationVDev.pdb/EE51816D1D223EFC0C3001DA7D21CDD11/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/activeds.pdb/1AD99AEDE0CBED47E39B1397EC50B2BC1/activeds.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/activeds.pdb/1AD99AEDE0CBED47E39B1397EC50B2BC1/activeds.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/activeds.pdb/1AD99AEDE0CBED47E39B1397EC50B2BC1/activeds.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/activeds.pdb/1AD99AEDE0CBED47E39B1397EC50B2BC1/activeds.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/activeds.pdb/1AD99AEDE0CBED47E39B1397EC50B2BC1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/activeds.pdb/1AD99AEDE0CBED47E39B1397EC50B2BC1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/activeds.pdb/48292DBD57855B91104A8266FEF340231/activeds.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/activeds.pdb/48292DBD57855B91104A8266FEF340231/activeds.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/activeds.pdb/48292DBD57855B91104A8266FEF340231/activeds.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/activeds.pdb/48292DBD57855B91104A8266FEF340231/activeds.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/activeds.pdb/48292DBD57855B91104A8266FEF340231/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/activeds.pdb/48292DBD57855B91104A8266FEF340231/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncCsp.pdb/C8FFF0AD165A3DD04AAA1F09278DE78A1/ActiveSyncCsp.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncCsp.pdb/C8FFF0AD165A3DD04AAA1F09278DE78A1/ActiveSyncCsp.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncCsp.pdb/C8FFF0AD165A3DD04AAA1F09278DE78A1/ActiveSyncCsp.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncCsp.pdb/C8FFF0AD165A3DD04AAA1F09278DE78A1/ActiveSyncCsp.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncCsp.pdb/C8FFF0AD165A3DD04AAA1F09278DE78A1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncCsp.pdb/C8FFF0AD165A3DD04AAA1F09278DE78A1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncProvider.pdb/45652AB7886524036AA8AEE3488DFEE81/ActiveSyncProvider.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncProvider.pdb/45652AB7886524036AA8AEE3488DFEE81/ActiveSyncProvider.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncProvider.pdb/45652AB7886524036AA8AEE3488DFEE81/ActiveSyncProvider.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncProvider.pdb/45652AB7886524036AA8AEE3488DFEE81/ActiveSyncProvider.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncProvider.pdb/45652AB7886524036AA8AEE3488DFEE81/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncProvider.pdb/45652AB7886524036AA8AEE3488DFEE81/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncProvider.pdb/928B259A4844E3ADDAEBD10DA43D2EFD1/ActiveSyncProvider.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncProvider.pdb/928B259A4844E3ADDAEBD10DA43D2EFD1/ActiveSyncProvider.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncProvider.pdb/928B259A4844E3ADDAEBD10DA43D2EFD1/ActiveSyncProvider.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncProvider.pdb/928B259A4844E3ADDAEBD10DA43D2EFD1/ActiveSyncProvider.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActiveSyncProvider.pdb/928B259A4844E3ADDAEBD10DA43D2EFD1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActiveSyncProvider.pdb/928B259A4844E3ADDAEBD10DA43D2EFD1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/462C4AB7ADD170ED8F05B9E1A2010B571/ActXPrxy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/462C4AB7ADD170ED8F05B9E1A2010B571/ActXPrxy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/4BBF42580E0740C516CDFED1793365051/ActXPrxy.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/4BBF42580E0740C516CDFED1793365051/ActXPrxy.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/4BBF42580E0740C516CDFED1793365051/ActXPrxy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/4BBF42580E0740C516CDFED1793365051/ActXPrxy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/4BBF42580E0740C516CDFED1793365051/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/4BBF42580E0740C516CDFED1793365051/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/6AA1BC533F4236D0A74AC91441BAEF151/ActXPrxy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/6AA1BC533F4236D0A74AC91441BAEF151/ActXPrxy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/7A8B0F648427C7CE8C3345C9BCFADDCC1/ActXPrxy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/7A8B0F648427C7CE8C3345C9BCFADDCC1/ActXPrxy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/B8D95887962DD8F2E86DF02FAA491F5F1/ActXPrxy.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/B8D95887962DD8F2E86DF02FAA491F5F1/ActXPrxy.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/B8D95887962DD8F2E86DF02FAA491F5F1/ActXPrxy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/B8D95887962DD8F2E86DF02FAA491F5F1/ActXPrxy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/B8D95887962DD8F2E86DF02FAA491F5F1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/B8D95887962DD8F2E86DF02FAA491F5F1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/ActXPrxy.pdb/CDEB8F718D084BCAF5C2E74DAD7606AA1/ActXPrxy.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/ActXPrxy.pdb/CDEB8F718D084BCAF5C2E74DAD7606AA1/ActXPrxy.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWinRT.pdb/7A365002D5F4D75C60082667E34797FE1/AcWinRT.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWinRT.pdb/7A365002D5F4D75C60082667E34797FE1/AcWinRT.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWinRT.pdb/7A365002D5F4D75C60082667E34797FE1/AcWinRT.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWinRT.pdb/7A365002D5F4D75C60082667E34797FE1/AcWinRT.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWinRT.pdb/7A365002D5F4D75C60082667E34797FE1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWinRT.pdb/7A365002D5F4D75C60082667E34797FE1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWinRT.pdb/D694F8373653E3B97948451FED9AF87E1/AcWinRT.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWinRT.pdb/D694F8373653E3B97948451FED9AF87E1/AcWinRT.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWinRT.pdb/D694F8373653E3B97948451FED9AF87E1/AcWinRT.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWinRT.pdb/D694F8373653E3B97948451FED9AF87E1/AcWinRT.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWinRT.pdb/D694F8373653E3B97948451FED9AF87E1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWinRT.pdb/D694F8373653E3B97948451FED9AF87E1/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWow64.pdb/A28CDF972C43A7C2DF8C3C1B311B12391/AcWow64.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWow64.pdb/A28CDF972C43A7C2DF8C3C1B311B12391/AcWow64.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWow64.pdb/A28CDF972C43A7C2DF8C3C1B311B12391/AcWow64.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWow64.pdb/A28CDF972C43A7C2DF8C3C1B311B12391/AcWow64.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcWow64.pdb/A28CDF972C43A7C2DF8C3C1B311B12391/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcWow64.pdb/A28CDF972C43A7C2DF8C3C1B311B12391/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Acx01000.pdb/79C28C4447224C9CB1EEE23BB4DBE0BA1/Acx01000.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Acx01000.pdb/79C28C4447224C9CB1EEE23BB4DBE0BA1/Acx01000.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Acx01000.pdb/DAD510EAFC7ADD97D2AAB26C1B426FE61/Acx01000.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Acx01000.pdb/DAD510EAFC7ADD97D2AAB26C1B426FE61/Acx01000.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Acx01000.pdb/DAD510EAFC7ADD97D2AAB26C1B426FE61/Acx01000.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Acx01000.pdb/DAD510EAFC7ADD97D2AAB26C1B426FE61/Acx01000.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Acx01000.pdb/DAD510EAFC7ADD97D2AAB26C1B426FE61/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Acx01000.pdb/DAD510EAFC7ADD97D2AAB26C1B426FE61/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Acx01000.pdb/DE1161259CB077DC4233784EEA3949E71/Acx01000.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Acx01000.pdb/DE1161259CB077DC4233784EEA3949E71/Acx01000.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/Acx01000.sys/C2C5590Fb6000/Acx01000.sys",
+   "classified": {
+    "family": "pe",
+    "role": "image",
+    "ext": ".sys",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/Acx01000.sys/C2C5590Fb6000/Acx01000.sys",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxHdAudio.pdb/C2678A312AD932339D8F6ACE9AC0B8291/AcxHdAudio.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxHdAudio.pdb/C2678A312AD932339D8F6ACE9AC0B8291/AcxHdAudio.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxHdAudio.pdb/C2678A312AD932339D8F6ACE9AC0B8291/AcxHdAudio.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxHdAudio.pdb/C2678A312AD932339D8F6ACE9AC0B8291/AcxHdAudio.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxHdAudio.pdb/C2678A312AD932339D8F6ACE9AC0B8291/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxHdAudio.pdb/C2678A312AD932339D8F6ACE9AC0B8291/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/9F327828C51FB1C3FE87567CF4AA52031/AcxKd.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/9F327828C51FB1C3FE87567CF4AA52031/AcxKd.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/9F327828C51FB1C3FE87567CF4AA52031/AcxKd.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/9F327828C51FB1C3FE87567CF4AA52031/AcxKd.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/9F327828C51FB1C3FE87567CF4AA52031/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/9F327828C51FB1C3FE87567CF4AA52031/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/B7EA93279A1F0272C8A1E039BBF3FB521/AcxKd.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/B7EA93279A1F0272C8A1E039BBF3FB521/AcxKd.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/B7EA93279A1F0272C8A1E039BBF3FB521/AcxKd.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/B7EA93279A1F0272C8A1E039BBF3FB521/AcxKd.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/B7EA93279A1F0272C8A1E039BBF3FB521/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/B7EA93279A1F0272C8A1E039BBF3FB521/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/E0DB56A269EF8927A42300CCB0B0BBE71/AcxKd.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/E0DB56A269EF8927A42300CCB0B0BBE71/AcxKd.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/E0DB56A269EF8927A42300CCB0B0BBE71/AcxKd.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/E0DB56A269EF8927A42300CCB0B0BBE71/AcxKd.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcxKd.pdb/E0DB56A269EF8927A42300CCB0B0BBE71/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcxKd.pdb/E0DB56A269EF8927A42300CCB0B0BBE71/file.ptr",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcXtrnal.pdb/16FA79D735A8AFA820293FA9BC6F854F1/AcXtrnal.pd_",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcXtrnal.pdb/16FA79D735A8AFA820293FA9BC6F854F1/AcXtrnal.pd_",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcXtrnal.pdb/16FA79D735A8AFA820293FA9BC6F854F1/AcXtrnal.pdb",
+   "classified": {
+    "family": "pe",
+    "role": "debug",
+    "ext": ".pdb",
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcXtrnal.pdb/16FA79D735A8AFA820293FA9BC6F854F1/AcXtrnal.pdb",
+    "debuginfod": null
+   }
+  },
+  {
+   "path": "/AcXtrnal.pdb/16FA79D735A8AFA820293FA9BC6F854F1/file.ptr",
+   "classified": {
+    "family": "pe",
+    "role": null,
+    "ext": null,
+    "inbound_layout": "symstore",
+    "ident": null,
+    "source_path": null
+   },
+   "render": {
+    "symstore": "https://UPSTREAM.example/sym/AcXtrnal.pdb/16FA79D735A8AFA820293FA9BC6F854F1/file.ptr",
+    "debuginfod": null
+   }
+  }
+ ]
+}
