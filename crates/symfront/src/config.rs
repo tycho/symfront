@@ -165,6 +165,12 @@ probe_timeout = "15s"
 # Delay between launching successive priority tiers. 0 = flat fan-out.
 stagger = "100ms"
 
+[debuginfod]
+# Queries with a build-id shorter than this (hex chars) are never offered
+# to debuginfod upstreams — real GNU build-ids are 32-40 chars, and the
+# servers 503 on shorter probes (Sentry emits some). 0 disables.
+#min_buildid_hex = 32
+
 [compression]
 # Serve-side compression (tier 0 and cache hits). CAB-packed (*_) payloads
 # are never recompressed.

@@ -39,6 +39,11 @@ stagger = "100ms"
 connect_timeout = "5s"
 read_timeout = "20s"
 
+[debuginfod]
+# Sentry probes PE modules through SSQP ELF keys with 13-char pseudo
+# build-ids; debuginfod servers 503 those (uncacheable). Don't fan them out.
+min_buildid_hex = 32
+
 [compression]
 # zstd offered first, gzip fallback (zlib-rs backend); never recompresses
 # CAB-packed (*_) payloads; floor matches the old nginx gzip_min_length.

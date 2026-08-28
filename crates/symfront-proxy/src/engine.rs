@@ -179,8 +179,20 @@ impl ProxyEngine {
         };
 
         // Which upstreams admit this query, and at what URL?
+        // Too-short "build-ids" (Sentry probing PE modules through SSQP ELF
+        // keys) never render for debuginfod upstreams: every real debuginfod
+        // server rejects them with a 503, which we'd re-ask forever since
+        // 5xx is never cached.
+        let short_buildid = query
+            .ident
+            .as_deref()
+            .map(|i| i.len() < self.config.min_buildid_hex)
+            .unwrap_or(false);
         let mut candidates: Vec<Candidate> = Vec::new();
         for upstream in &self.upstreams {
+            if short_buildid && upstream.layout == crate::query::LayoutKind::Debuginfod {
+                continue;
+            }
             if let Some(url) = upstream.candidate_url(&query) {
                 candidates.push(Candidate {
                     key: CacheKey::new(&upstream.name, &url),

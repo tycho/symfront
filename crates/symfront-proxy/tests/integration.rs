@@ -749,3 +749,59 @@ async fn disabled_upstream_is_never_used() {
     assert_eq!(engine.upstreams.len(), 1);
     assert!(!engine.upstreams[0].enabled);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn short_buildids_never_reach_debuginfod() {
+    let fake = Fake::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut u = upstream("dbg", &fake.base_url());
+    u.layout = LayoutKind::Debuginfod;
+    u.binformat = [Family::Elf].into_iter().collect();
+    let engine = engine_with(dir.path(), test_config(dir.path()), vec![u]);
+
+    // A PE timestamp+size masquerading as a build-id (Sentry probe shape):
+    // rejected without any upstream traffic, via either inbound layout.
+    assert_eq!(
+        fetch(&engine, "/_.debug/elf-buildid-sym-0871fae9be000/_.debug")
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        fetch(&engine, "/buildid/0871fae9be000/debuginfo").await.0,
+        404
+    );
+    assert!(
+        fake.state.hits.lock().unwrap().is_empty(),
+        "no upstream traffic"
+    );
+
+    // A real-length build-id still fans out.
+    let id = "aabbccddeeff00112233445566778899aabbccdd";
+    fake.set(
+        &format!("/buildid/{id}/debuginfo"),
+        Reply::Body(b"dwarf".to_vec()),
+    );
+    assert_eq!(
+        fetch(&engine, &format!("/buildid/{id}/debuginfo")).await.0,
+        200
+    );
+
+    // min_buildid_hex = 0 disables the guard.
+    let dir2 = tempfile::tempdir().unwrap();
+    let mut cfg = test_config(dir2.path());
+    cfg.min_buildid_hex = 0;
+    let mut u = upstream("dbg", &fake.base_url());
+    u.layout = LayoutKind::Debuginfod;
+    u.binformat = [Family::Elf].into_iter().collect();
+    let engine = engine_with(dir2.path(), cfg, vec![u]);
+    assert_eq!(
+        fetch(&engine, "/buildid/0871fae9be000/debuginfo").await.0,
+        404
+    );
+    assert_eq!(
+        fake.hits("/buildid/0871fae9be000/debuginfo"),
+        1,
+        "guard disabled: probed"
+    );
+}

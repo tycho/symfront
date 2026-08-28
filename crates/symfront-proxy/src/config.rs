@@ -150,6 +150,12 @@ pub struct ProxyConfig {
     pub stagger: Duration,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
+    /// Minimum build-id length (hex chars) for a query to be offered to
+    /// debuginfod upstreams. Real GNU build-ids are 32-40 hex chars;
+    /// Sentry probes PE modules through SSQP ELF keys with 13-char
+    /// timestamp+size pseudo-ids, which every debuginfod server rejects
+    /// with a 503. 0 disables the guard.
+    pub min_buildid_hex: usize,
     pub compression: CompressionConfig,
 }
 
@@ -186,6 +192,7 @@ impl Default for ProxyConfig {
             stagger: Duration::from_millis(100),
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(20),
+            min_buildid_hex: 32,
             compression: CompressionConfig::default(),
         }
     }
@@ -206,6 +213,8 @@ struct RawProxy {
     health: RawHealth,
     #[serde(default)]
     fanout: RawFanout,
+    #[serde(default)]
+    debuginfod: RawDebuginfod,
     #[serde(default)]
     compression: RawCompression,
 }
@@ -241,6 +250,12 @@ struct RawFanout {
     stagger: Option<String>,
     connect_timeout: Option<String>,
     read_timeout: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawDebuginfod {
+    min_buildid_hex: Option<usize>,
 }
 
 #[derive(Deserialize, Default)]
@@ -364,6 +379,9 @@ impl ProxyConfig {
         }
         if let Some(s) = raw.fanout.read_timeout {
             cfg.read_timeout = parse_duration(&s)?;
+        }
+        if let Some(v) = raw.debuginfod.min_buildid_hex {
+            cfg.min_buildid_hex = v;
         }
         if let Some(v) = raw.compression.min_size {
             cfg.compression.min_size = v;
