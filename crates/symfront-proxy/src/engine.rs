@@ -52,8 +52,13 @@ pub enum Outcome {
     HeaderOnly { status: u16, meta: FillMeta },
     /// Positive cache hit: stream `path` (standalone mode).
     CacheHit { entry: Box<Entry>, path: PathBuf },
-    /// Positive cache hit, nginx mode: X-Accel-Redirect to `redirect`.
-    AccelHit { entry: Box<Entry>, redirect: String },
+    /// Positive cache hit, offload mode: `header` (X-Accel-Redirect for
+    /// nginx, X-Sendfile for lighttpd) pointing at `redirect`.
+    AccelHit {
+        entry: Box<Entry>,
+        redirect: String,
+        header: &'static str,
+    },
     /// Live fill in progress: tail-follow it (or, for HEAD, send the
     /// headers and detach — the fill finishes regardless).
     Fill {
@@ -152,7 +157,7 @@ impl ProxyEngine {
                 entry: Box::new(entry),
                 path,
             },
-            CacheMode::Nginx => {
+            CacheMode::Nginx | CacheMode::Lighttpd => {
                 let redirect = format!(
                     "{}/{}",
                     self.config.accel_prefix.trim_end_matches('/'),
@@ -161,6 +166,7 @@ impl ProxyEngine {
                 Outcome::AccelHit {
                     entry: Box::new(entry),
                     redirect,
+                    header: self.config.mode.accel_header(),
                 }
             }
         })
@@ -425,13 +431,14 @@ impl ProxyEngine {
                 entry: Box::new(entry.clone()),
                 path,
             },
-            CacheMode::Nginx => Outcome::AccelHit {
+            CacheMode::Nginx | CacheMode::Lighttpd => Outcome::AccelHit {
                 entry: Box::new(entry.clone()),
                 redirect: format!(
                     "{}/{}",
                     self.config.accel_prefix.trim_end_matches('/'),
                     self.cache.accel_rel_path(&entry.key)
                 ),
+                header: self.config.mode.accel_header(),
             },
         })
     }

@@ -143,7 +143,10 @@ negotiated compression: zstd first for clients that offer it, gzip
 fallback (zlib-rs backend), never for CAB-packed `*_` payloads, range
 responses, or bodies under the floor (default 4 KiB). Cache hits can
 alternatively be offloaded to nginx via `X-Accel-Redirect`
-(`mode = "nginx"`), trading per-response stats for sendfile.
+(`mode = "nginx"`) or to lighttpd via `X-Sendfile` (`mode = "lighttpd"`,
+with `accel_prefix` set to the absolute cache data directory), trading
+per-response stats for sendfile; `accel_store_prefix` extends the
+offload to tier-0 store hits.
 
 ## Observability
 

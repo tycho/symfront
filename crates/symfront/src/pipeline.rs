@@ -13,7 +13,7 @@ use axum::body::Body;
 use axum::http::{header, HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use symfront_proxy::config::{
-    blacklist_from_file, upstreams_from_file, CompressionConfig, ProxyConfig,
+    blacklist_from_file, upstreams_from_file, CacheMode, CompressionConfig, ProxyConfig,
 };
 use symfront_proxy::engine::{ClientRequest, Outcome, ProxyEngine};
 use symfront_proxy::stats::RequestOutcome;
@@ -217,6 +217,7 @@ async fn serve_path(
     // if we own a copy, we serve it.
     if let Some(store) = &state.store {
         if let Some(local) = symbols::resolve(store.root(), path.trim_start_matches('/')) {
+            let mut overrides = ServeOverrides::default();
             if let Some(engine) = state.engine() {
                 engine.stats.count(RequestOutcome::Tier0Hit);
                 if let Ok(md) = std::fs::metadata(&local) {
@@ -225,10 +226,19 @@ async fn serve_path(
                         .bytes_from_store
                         .fetch_add(md.len(), Ordering::Relaxed);
                 }
+                if engine.config.mode != CacheMode::Standalone {
+                    if let (Some(prefix), Ok(rel)) = (
+                        &engine.config.accel_store_prefix,
+                        local.strip_prefix(store.root()),
+                    ) {
+                        overrides.accel = Some((
+                            engine.config.mode.accel_header(),
+                            format!("{}/{}", prefix.trim_end_matches('/'), rel.display()),
+                        ));
+                    }
+                }
             }
-            return match symbols::serve_file(&local, &method, headers, &comp, Default::default())
-                .await
-            {
+            return match symbols::serve_file(&local, &method, headers, &comp, overrides).await {
                 Ok(resp) => resp,
                 Err(e) => {
                     tracing::warn!("serving {}: {e:#}", local.display());
@@ -287,6 +297,7 @@ async fn render_outcome(
                 last_modified: entry
                     .last_modified
                     .map(symfront_proxy::cache::format_http_date),
+                accel: None,
             };
             match symbols::serve_file(&path, method, headers, comp, overrides).await {
                 Ok(resp) => resp,
@@ -296,14 +307,18 @@ async fn render_outcome(
                 }
             }
         }
-        Outcome::AccelHit { entry, redirect } => {
+        Outcome::AccelHit {
+            entry,
+            redirect,
+            header,
+        } => {
             engine
                 .stats
                 .bytes_from_cache
                 .fetch_add(entry.size, Ordering::Relaxed);
             let mut b = Response::builder()
                 .status(StatusCode::OK)
-                .header("X-Accel-Redirect", redirect)
+                .header(header, redirect)
                 .header(header::CONTENT_TYPE, "application/octet-stream");
             if let Some(etag) = &entry.etag {
                 b = b.header(header::ETAG, etag);

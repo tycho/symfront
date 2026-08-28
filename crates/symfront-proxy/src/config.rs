@@ -129,6 +129,20 @@ pub enum CacheMode {
     Standalone,
     /// Offload cache-hit bodies to nginx via X-Accel-Redirect.
     Nginx,
+    /// Offload cache-hit bodies to lighttpd via X-Sendfile. Unlike nginx's
+    /// internal-location URIs, lighttpd expects an absolute filesystem
+    /// path, so `accel_prefix` must be the cache data directory itself.
+    Lighttpd,
+}
+
+impl CacheMode {
+    /// Response header carrying the offload path in the accel modes.
+    pub fn accel_header(self) -> &'static str {
+        match self {
+            CacheMode::Lighttpd => "X-Sendfile",
+            _ => "X-Accel-Redirect",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -143,6 +157,11 @@ pub struct ProxyConfig {
     pub mode: CacheMode,
     /// Internal-location prefix for X-Accel-Redirect responses.
     pub accel_prefix: String,
+    /// Also offload tier-0 (managed store) hits in the accel modes:
+    /// header value is this prefix + the path relative to the store root.
+    /// For lighttpd this is the absolute store root itself; for nginx an
+    /// internal location aliasing it. `None` streams store hits ourselves.
+    pub accel_store_prefix: Option<String>,
     pub ttl: TtlPolicy,
     pub health_probe_interval: Duration,
     pub health_probe_timeout: Duration,
@@ -190,6 +209,7 @@ impl Default for ProxyConfig {
             low_watermark: 0.95,
             mode: CacheMode::Standalone,
             accel_prefix: "/_symfront_cache".into(),
+            accel_store_prefix: None,
             ttl: TtlPolicy::default(),
             health_probe_interval: Duration::from_secs(30),
             health_probe_timeout: Duration::from_secs(15),
@@ -235,6 +255,7 @@ struct RawCache {
     low_watermark: Option<f64>,
     mode: Option<CacheMode>,
     accel_prefix: Option<String>,
+    accel_store_prefix: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -372,6 +393,7 @@ impl ProxyConfig {
         if let Some(p) = raw.cache.accel_prefix {
             cfg.accel_prefix = p;
         }
+        cfg.accel_store_prefix = raw.cache.accel_store_prefix;
         if let Some(s) = raw.ttl.positive {
             cfg.ttl.positive = parse_duration(&s)?;
         }

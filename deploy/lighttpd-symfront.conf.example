@@ -1,0 +1,101 @@
+# lighttpd in front of symfront (mode = "lighttpd" in proxy.toml).
+# Paths match the deploy/etc-symfront example tree.
+#
+# Why lighttpd over nginx here: it honors `Upgrade: h2c` (cleartext
+# HTTP/2), and mod_deflate speaks brotli (+ zstd if built with it) for
+# offloaded cache hits. It has no HTTP/3/QUIC, though.
+#
+# Offload mechanics: symfront answers cache/store hits with
+# `X-Sendfile: /absolute/path`; lighttpd checks the path against
+# x-sendfile-docroot, then serves the file itself — sendfile syscall,
+# Range handling, and mod_deflate compression included. mod_deflate only
+# compresses bodies that are complete at header time: X-Sendfile'd hits
+# qualify, live fill streams pass through uncompressed.
+
+server.modules = (
+    "mod_openssl",
+    "mod_deflate",
+    "mod_proxy",
+    "mod_accesslog",
+)
+# mod_h2 is loaded automatically when h2/h2c is enabled.
+
+server.username      = "http"
+server.groupname     = "http"
+# Required by lighttpd but never actually served — everything proxies.
+server.document-root = "/srv/http"
+
+server.errorlog    = "/var/log/lighttpd/error.log"
+accesslog.filename = "/var/log/lighttpd/access.log"
+accesslog.format = "%h %V - [%t] \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %T \"%{X-Symfront-Upstream}o\""
+
+server.max-fds = 65536
+server.tag = ""
+
+# Symbol payloads are all effectively opaque binaries.
+mimetype.assign = ( "" => "application/octet-stream" )
+
+server.feature-flags += (
+    "server.h2"  => "enable",   # default since 1.4.59, listed for clarity
+    "server.h2c" => "enable",   # cleartext HTTP/2 upgrade
+)
+
+# Stream both directions: fills must not be buffered.
+server.stream-request-body  = 2
+server.stream-response-body = 2
+
+server.max-request-size = 4194304       # KB → 4 GiB
+
+# ---------------------------------------------------------------- listeners
+server.port = 80
+$SERVER["socket"] == "[::]:80"  { }
+$SERVER["socket"] == ":443"     { ssl.engine = "enable" }
+$SERVER["socket"] == "[::]:443" { ssl.engine = "enable" }
+
+ssl.pemfile = "/etc/lighttpd/certs/fullchain.pem"
+ssl.privkey = "/etc/lighttpd/certs/privkey.pem"
+ssl.openssl.ssl-conf-cmd = ( "MinProtocol" => "TLSv1.2" )
+
+# ---------------------------------------------------------------- backend
+# mod_proxy speaks HTTP/1.1 to the socket and sets X-Forwarded-For /
+# X-Forwarded-Proto on its own (pair with server.toml trusted_proxies);
+# proxy.forwarded adds RFC 7239 as well.
+proxy.server = ( "" => ( (
+    "host"               => "/run/symfront/http.sock",
+    "x-sendfile"         => "enable",
+    # Allowed X-Sendfile path prefixes. Must cover accel_prefix (the
+    # cache data dir) and accel_store_prefix (the store root).
+    "x-sendfile-docroot" => (
+        "/srv/cache/symfront/data",
+        "/srv/symstore",
+    ),
+) ) )
+proxy.forwarded = ( "for" => 1, "proto" => 1, "host" => 1 )
+
+# ---------------------------------------------------------------- compression
+# For X-Sendfile'd hits. Order = preference; drop "zstd" if lighttpd was
+# built without it. lighttpd suffixes the ETag per encoding.
+deflate.mimetypes         = ( "" )      # everything
+deflate.allowed-encodings = ( "zstd", "br", "gzip", "deflate" )
+deflate.min-compress-size = 4096
+deflate.compression-level = 6           # zlib level
+deflate.params = (
+    "BROTLI_PARAM_QUALITY"    => 5,
+    "ZSTD_c_compressionLevel" => 3,
+)
+
+# CAB-compressed payloads (trailing '_') don't recompress usefully —
+# symfront's standalone mode skips these too.
+$HTTP["url"] =~ "_$" {
+    deflate.mimetypes = ( )
+}
+
+# ---------------------------------------------------------------- admin UI
+# mod_deflate can't stream-compress, so under stream-response-body = 2 the
+# dynamic backend responses (admin HTML/JSON, /metrics) go out uncompressed.
+# They're small: buffer just this subtree so mod_deflate sees complete
+# bodies. The SSE event stream is excluded — buffering would stall it.
+$HTTP["url"] =^ "/admin/api/events" { }
+else $HTTP["url"] =~ "^/(admin($|/)|metrics$)" {
+    server.stream-response-body = 0
+}

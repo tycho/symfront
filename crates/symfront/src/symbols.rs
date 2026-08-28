@@ -193,6 +193,11 @@ fn negotiate_encoding(
 pub(crate) struct ServeOverrides {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
+    /// Offload the body to the front proxy: `(header name, target)`,
+    /// e.g. `("X-Sendfile", "/srv/symstore/foo.pdb/…/foo.pdb")`. The
+    /// proxy applies Range and content negotiation against the file
+    /// itself; we still answer conditionals (304s carry no body anyway).
+    pub accel: Option<(&'static str, String)>,
 }
 
 /// Serve a file with conditionals, ranges, and negotiated compression.
@@ -246,6 +251,17 @@ pub(crate) async fn serve_file(
                     .into_response());
             }
         }
+    }
+
+    if let Some((accel_header, target)) = overrides.accel {
+        let base = base.status(StatusCode::OK);
+        return Ok(if *method == Method::HEAD {
+            base.header(header::CONTENT_LENGTH, len)
+        } else {
+            base.header(accel_header, target)
+        }
+        .body(Body::empty())?
+        .into_response());
     }
 
     // Range, honoring If-Range (mismatched validator => send the full body).

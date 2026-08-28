@@ -13,13 +13,24 @@ size = "512GB"
 #high_watermark = 1.0
 #low_watermark = 0.95
 
-# "nginx" matches the current deployment: cache-hit bodies are offloaded via
-# X-Accel-Redirect (see the vhost's /_symfront_cache internal location).
-# "standalone" serves them ourselves — richer stats (actual wire bytes,
-# per-response compression ratios) at the cost of the offload. Revisit after
-# the parallel-run benchmarks.
-mode = "nginx"
-accel_prefix = "/_symfront_cache"
+# "lighttpd" matches the current deployment: cache-hit bodies are offloaded
+# via X-Sendfile, which lighttpd resolves as an absolute filesystem path —
+# so accel_prefix is the cache *data* directory itself (and it must appear
+# in lighttpd's x-sendfile-docroot list).
+# "nginx" offloads via X-Accel-Redirect instead; accel_prefix is then the
+# internal-location URI aliasing the data directory (e.g. the
+# /_symfront_cache location in deploy/nginx-symfront.conf.example).
+# "standalone" serves bodies ourselves — richer stats (actual wire bytes,
+# per-response compression ratios) at the cost of the offload.
+mode = "lighttpd"
+accel_prefix = "/srv/cache/symfront/data"
+
+# Offload tier-0 (managed store) hits the same way: the header value is
+# this prefix plus the store-relative path. For lighttpd point it at the
+# store root itself (also listed in x-sendfile-docroot); for nginx at an
+# internal location aliasing the store. Unset: symfront streams store hits
+# itself even in the accel modes.
+accel_store_prefix = "/srv/symstore"
 
 [ttl]
 # Positive entries: 365d, sliding on every hit (was fixed 365d in symsrv).
@@ -56,3 +67,4 @@ prewarm_interval = "60s"
 min_size = 4096
 gzip_level = 6
 zstd_level = 3
+

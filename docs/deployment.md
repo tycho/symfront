@@ -45,9 +45,11 @@ cutover).
 
 - Install `deploy/symfront.service`, start it; the socket appears at
   `/run/symfront/http.sock`.
-- Point the `symbols-beta.*` vhost at it (see
-  `deploy/nginx-symfront.conf.example`, which includes the
-  `/_symfront_cache/` internal location for X-Accel mode).
+- Point the `symbols-beta.*` vhost at it. For lighttpd (the current
+  front) see `deploy/lighttpd-symfront.conf.example` (X-Sendfile offload,
+  h2c, brotli/zstd); for nginx see `deploy/nginx-symfront.conf.example`,
+  which includes the `/_symfront_cache/` internal location for X-Accel
+  mode.
 - Mirror real traffic or replay access-log paths against both hosts and
   diff status codes; the layout goldens already pin classification, so
   differences should be limited to timing and the intentional semantic

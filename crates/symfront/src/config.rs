@@ -145,8 +145,15 @@ size = "512GB"
 
 # "standalone": stream cache hits ourselves (richer stats).
 # "nginx": offload cache-hit bodies via X-Accel-Redirect.
+# "lighttpd": offload via X-Sendfile; accel_prefix must then be the
+#             absolute path of the cache data directory.
 mode = "standalone"
 #accel_prefix = "/_symfront_cache"
+# Also offload tier-0 (managed store) hits in the accel modes: the header
+# value is this prefix plus the store-relative path. For lighttpd point it
+# at the store root itself; for nginx at an internal location aliasing it.
+# Unset: store hits are streamed by symfront even in accel modes.
+#accel_store_prefix = "/srv/symstore"
 
 [ttl]
 # Positive TTL; slides on every hit.
