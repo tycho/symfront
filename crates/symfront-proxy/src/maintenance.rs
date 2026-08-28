@@ -212,6 +212,40 @@ impl ProxyEngine {
         Ok(report)
     }
 
+    /// Resolve every enabled upstream's hostname once, concurrently, via
+    /// the system resolver — the same getaddrinfo path (A + AAAA) the HTTP
+    /// client uses. Keeps OS and LAN DNS caches warm without sending the
+    /// upstreams any traffic; failures are logged at debug (a persistent
+    /// one will surface as a transport failure on the next real request
+    /// anyway).
+    pub async fn prewarm_dns_once(&self) {
+        use std::net::ToSocketAddrs;
+        let hosts: std::collections::HashSet<String> = self
+            .upstreams
+            .iter()
+            .filter(|u| u.enabled)
+            .filter_map(|u| {
+                let url = reqwest::Url::parse(&u.base_url).ok()?;
+                // domain() is None for IP literals, which need no warming.
+                url.domain().map(|d| d.to_string())
+            })
+            .collect();
+        let lookups = hosts.into_iter().map(|host| {
+            tokio::task::spawn_blocking(move || {
+                let started = std::time::Instant::now();
+                match (host.as_str(), 0u16).to_socket_addrs() {
+                    Ok(addrs) => tracing::trace!(
+                        "dns prewarm {host}: {} addr(s) in {:?}",
+                        addrs.count(),
+                        started.elapsed()
+                    ),
+                    Err(e) => tracing::debug!("dns prewarm {host}: {e}"),
+                }
+            })
+        });
+        let _ = futures_util::future::join_all(lookups).await;
+    }
+
     /// One pass of the suspended-upstream prober. Any complete HTTP
     /// response (any status) restores an upstream.
     pub async fn probe_suspended_once(&self) {

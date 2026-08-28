@@ -156,6 +156,10 @@ pub struct ProxyConfig {
     /// timestamp+size pseudo-ids, which every debuginfod server rejects
     /// with a 503. 0 disables the guard.
     pub min_buildid_hex: usize,
+    /// Re-resolve every enabled upstream's hostname this often, keeping
+    /// OS/LAN DNS caches warm so client requests never pay for a cold
+    /// recursive lookup (no traffic to the upstream itself). 0 disables.
+    pub dns_prewarm_interval: Duration,
     pub compression: CompressionConfig,
 }
 
@@ -193,6 +197,7 @@ impl Default for ProxyConfig {
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(20),
             min_buildid_hex: 32,
+            dns_prewarm_interval: Duration::from_secs(60),
             compression: CompressionConfig::default(),
         }
     }
@@ -215,6 +220,8 @@ struct RawProxy {
     fanout: RawFanout,
     #[serde(default)]
     debuginfod: RawDebuginfod,
+    #[serde(default)]
+    dns: RawDns,
     #[serde(default)]
     compression: RawCompression,
 }
@@ -256,6 +263,12 @@ struct RawFanout {
 #[serde(deny_unknown_fields)]
 struct RawDebuginfod {
     min_buildid_hex: Option<usize>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawDns {
+    prewarm_interval: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -382,6 +395,9 @@ impl ProxyConfig {
         }
         if let Some(v) = raw.debuginfod.min_buildid_hex {
             cfg.min_buildid_hex = v;
+        }
+        if let Some(s) = raw.dns.prewarm_interval {
+            cfg.dns_prewarm_interval = parse_duration(&s)?;
         }
         if let Some(v) = raw.compression.min_size {
             cfg.compression.min_size = v;

@@ -912,3 +912,23 @@ async fn config_reload_mid_fill_does_not_break_the_fill() {
         "second engine must hit the committed cache entry"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dns_prewarm_resolves_enabled_domains_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ip_literal = upstream("ip", "http://127.0.0.1:9");
+    ip_literal.priority = 1;
+    let localhost = upstream("local", "http://localhost:9");
+    let mut parked = upstream("parked", "http://this-name-should-never-resolve.invalid");
+    parked.enabled = false;
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![ip_literal, localhost, parked],
+    );
+    // Smoke: completes without touching any upstream port (port 0 lookups
+    // resolve only). localhost resolves via the system resolver; the IP
+    // literal and the disabled upstream are skipped, so the .invalid name
+    // never errors loudly. Nothing to assert beyond clean completion.
+    engine.prewarm_dns_once().await;
+}

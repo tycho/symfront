@@ -44,6 +44,12 @@ read_timeout = "20s"
 # build-ids; debuginfod servers 503 those (uncacheable). Don't fan them out.
 min_buildid_hex = 32
 
+[dns]
+# Keep upstream hostnames resolved (A + AAAA through the system resolver)
+# so cold starts never pay for a recursive lookup and flaky resolution
+# (debuginfod.elfutils.org) surfaces in the background, not on requests.
+prewarm_interval = "60s"
+
 [compression]
 # zstd offered first, gzip fallback (zlib-rs backend); never recompresses
 # CAB-packed (*_) payloads; floor matches the old nginx gzip_min_length.

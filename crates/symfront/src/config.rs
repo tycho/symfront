@@ -171,6 +171,13 @@ stagger = "100ms"
 # servers 503 on shorter probes (Sentry emits some). 0 disables.
 #min_buildid_hex = 32
 
+[dns]
+# Re-resolve every enabled upstream's hostname this often (A + AAAA via the
+# system resolver), keeping OS and LAN DNS caches warm so requests never
+# pay for a cold recursive lookup. No traffic reaches the upstreams.
+# "0" disables.
+#prewarm_interval = "60s"
+
 [compression]
 # Serve-side compression (tier 0 and cache hits). CAB-packed (*_) payloads
 # are never recompressed.

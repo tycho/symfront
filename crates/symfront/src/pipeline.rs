@@ -111,6 +111,28 @@ pub(crate) fn spawn_background(
             }
         }
     });
+    let dns = Arc::clone(&state);
+    let stop = Arc::clone(&shutdown);
+    tokio::spawn(async move {
+        loop {
+            // Re-read each tick so a config reload changes the cadence.
+            let interval = dns
+                .engine()
+                .map(|e| e.config.dns_prewarm_interval)
+                .unwrap_or_default();
+            if interval.is_zero() {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            } else {
+                if let Some(engine) = dns.engine() {
+                    engine.prewarm_dns_once().await;
+                }
+                tokio::time::sleep(interval).await;
+            }
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+    });
     let evict = Arc::clone(&state);
     let stop = Arc::clone(&shutdown);
     tokio::spawn(async move {
