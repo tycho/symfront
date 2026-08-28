@@ -62,8 +62,8 @@ fn parse_file<T: serde::de::DeserializeOwned + Default>(path: &Path) -> anyhow::
     if !path.is_file() {
         return Ok(T::default());
     }
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
     toml::from_str(&text).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))
 }
 

@@ -334,7 +334,9 @@ impl ProxyConfig {
             || !(0.0..=1.0).contains(&cfg.high_watermark)
             || cfg.low_watermark > cfg.high_watermark
         {
-            return Err(invalid("cache watermarks must satisfy 0 <= low <= high <= 1"));
+            return Err(invalid(
+                "cache watermarks must satisfy 0 <= low <= high <= 1",
+            ));
         }
         if let Some(m) = raw.cache.mode {
             cfg.mode = m;
@@ -433,7 +435,10 @@ mod tests {
     fn durations_and_sizes() {
         assert_eq!(parse_duration("100ms").unwrap(), Duration::from_millis(100));
         assert_eq!(parse_duration("30").unwrap(), Duration::from_secs(30));
-        assert_eq!(parse_duration("7d").unwrap(), Duration::from_secs(7 * 86400));
+        assert_eq!(
+            parse_duration("7d").unwrap(),
+            Duration::from_secs(7 * 86400)
+        );
         assert_eq!(parse_size("512GB").unwrap(), 512_000_000_000);
         assert_eq!(parse_size("4KiB").unwrap(), 4096);
         assert_eq!(parse_size("1024").unwrap(), 1024);

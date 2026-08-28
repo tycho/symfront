@@ -51,9 +51,7 @@ impl ProxyEngine {
         let mut evicted_entries = 0u64;
         let mut evicted_bytes = 0u64;
         if total > high {
-            tracing::info!(
-                "cache at {total} bytes (> high watermark {high}); evicting to {low}"
-            );
+            tracing::info!("cache at {total} bytes (> high watermark {high}); evicting to {low}");
             while total > low {
                 let batch = match self.cache.db.eviction_candidates(512) {
                     Ok(b) if !b.is_empty() => b,
@@ -79,7 +77,9 @@ impl ProxyEngine {
                         total = total.saturating_sub(freed);
                         evicted_entries += keys.len() as u64;
                         evicted_bytes += freed;
-                        progress.removed.fetch_add(keys.len() as u64, Ordering::Relaxed);
+                        progress
+                            .removed
+                            .fetch_add(keys.len() as u64, Ordering::Relaxed);
                         progress.bytes_freed.fetch_add(freed, Ordering::Relaxed);
                     }
                     Err(e) => {
@@ -222,9 +222,7 @@ impl ProxyEngine {
             if !upstream.enabled {
                 continue;
             }
-            let ok = self
-                .probe_base(&upstream.base_url)
-                .await;
+            let ok = self.probe_base(&upstream.base_url).await;
             if ok {
                 self.health.restore(&name);
             }

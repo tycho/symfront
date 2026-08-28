@@ -104,8 +104,7 @@ fn is_expected_payload(file_name: &str, entry_names: &[&str]) -> bool {
         return true;
     }
     entry_names.iter().any(|n| {
-        file_name.eq_ignore_ascii_case(n)
-            || file_name.eq_ignore_ascii_case(&compressed_name(n))
+        file_name.eq_ignore_ascii_case(n) || file_name.eq_ignore_ascii_case(&compressed_name(n))
     })
 }
 
@@ -131,8 +130,7 @@ pub fn analyze(index: &StoreIndex, scan: &ScanResult) -> Analysis {
             // If its refs.ptr claims an active transaction, that transaction's
             // manifest is missing entries — mark it incomplete.
             if let Some(lines) = &d.refs {
-                let mut claimers: Vec<TransactionId> =
-                    lines.iter().filter_map(|l| l.tx).collect();
+                let mut claimers: Vec<TransactionId> = lines.iter().filter_map(|l| l.tx).collect();
                 claimers.sort();
                 claimers.dedup();
                 for t in claimers {

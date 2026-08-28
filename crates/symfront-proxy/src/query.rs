@@ -181,7 +181,10 @@ fn classify_symstore(path: &str) -> Option<SymbolQuery> {
         });
     }
 
-    let role = SYMSTORE_ROLES.iter().find(|(e, _)| *e == ext).map(|(_, r)| *r)?;
+    let role = SYMSTORE_ROLES
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map(|(_, r)| *r)?;
     Some(SymbolQuery {
         family: Family::Pe,
         role: Some(role),
@@ -259,7 +262,11 @@ pub fn render(layout: LayoutKind, base_url: &str, query: &SymbolQuery) -> Option
             if query.inbound_layout != LayoutKind::Symstore {
                 return None;
             }
-            Some(format!("{}{}", base_url.trim_end_matches('/'), query.raw_path))
+            Some(format!(
+                "{}{}",
+                base_url.trim_end_matches('/'),
+                query.raw_path
+            ))
         }
         LayoutKind::Debuginfod => {
             // Render canonically from the decoded identity (never from

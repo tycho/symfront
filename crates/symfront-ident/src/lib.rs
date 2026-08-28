@@ -67,10 +67,14 @@ pub fn identify(path: &Path) -> Result<Option<(FileKind, String)>> {
     let mut magic = [0u8; 32];
     let n = read_up_to(&mut f, &mut magic).map_err(|e| Error::io(path, e))?;
     if n >= 2 && &magic[0..2] == b"MZ" {
-        return Ok(pe_hash(&mut f).map_err(|e| Error::io(path, e))?.map(|h| (FileKind::Pe, h)));
+        return Ok(pe_hash(&mut f)
+            .map_err(|e| Error::io(path, e))?
+            .map(|h| (FileKind::Pe, h)));
     }
     if n == 32 && &magic == MSF7_MAGIC {
-        return Ok(pdb_hash(&mut f).map_err(|e| Error::io(path, e))?.map(|h| (FileKind::Pdb, h)));
+        return Ok(pdb_hash(&mut f)
+            .map_err(|e| Error::io(path, e))?
+            .map(|h| (FileKind::Pdb, h)));
     }
     if n >= 4 && &magic[0..4] == b"BSJB" {
         return Ok(portable_pdb_hash(&mut f)
@@ -325,10 +329,7 @@ fn walk(path: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<()> {
         return Ok(());
     }
     let rd = std::fs::read_dir(path).map_err(|e| Error::io(path, e))?;
-    let mut entries: Vec<_> = rd
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .collect();
+    let mut entries: Vec<_> = rd.filter_map(|e| e.ok()).map(|e| e.path()).collect();
     entries.sort();
     for entry in entries {
         walk(&entry, out)?;

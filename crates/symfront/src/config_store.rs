@@ -82,11 +82,7 @@ impl ConfigStore {
         let tree_id = index.write_tree()?;
         let tree = self.repo.find_tree(tree_id)?;
         let sig = signature(author)?;
-        let parent = self
-            .repo
-            .head()
-            .ok()
-            .and_then(|h| h.peel_to_commit().ok());
+        let parent = self.repo.head().ok().and_then(|h| h.peel_to_commit().ok());
         let parents: Vec<&git2::Commit> = parent.iter().collect();
         let id = self
             .repo
@@ -136,8 +132,7 @@ impl ConfigStore {
             }
             (Some(a), Some(b)) => {
                 let (ta, tb) = (tree_of(a)?, tree_of(b)?);
-                self.repo
-                    .diff_tree_to_tree(Some(&ta), Some(&tb), None)?
+                self.repo.diff_tree_to_tree(Some(&ta), Some(&tb), None)?
             }
             (None, Some(_)) => unreachable!("to without from"),
         };
@@ -194,7 +189,10 @@ mod tests {
         std::fs::write(dir.path().join("a.toml"), "x = 3\n").unwrap();
         assert!(store.commit_drift().unwrap().is_some());
         assert!(store.commit_drift().unwrap().is_none());
-        assert_eq!(store.log(10).unwrap()[0].message, "manual edit (out-of-band)");
+        assert_eq!(
+            store.log(10).unwrap()[0].message,
+            "manual edit (out-of-band)"
+        );
 
         // Deletions are drift too.
         std::fs::write(dir.path().join("b.toml"), "y = 1\n").unwrap();

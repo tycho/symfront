@@ -75,7 +75,11 @@ fn ts(secs: i64) -> String {
     let days = secs / 86400;
     let (mut y, mut rem) = (1970i64, days);
     loop {
-        let len = if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 { 366 } else { 365 };
+        let len = if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+            366
+        } else {
+            365
+        };
         if rem < len {
             break;
         }
@@ -83,7 +87,20 @@ fn ts(secs: i64) -> String {
         y += 1;
     }
     let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let months = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut m = 0;
     while rem >= months[m] {
         rem -= months[m];
@@ -121,7 +138,11 @@ pub fn user(db_path: &Path, cmd: UserCommand) -> Result<()> {
                     "{:<20} {:<6} {}  {} token(s)",
                     u.name,
                     u.role.to_string(),
-                    if u.has_password { "password" } else { "token-only" },
+                    if u.has_password {
+                        "password"
+                    } else {
+                        "token-only"
+                    },
                     u.tokens
                 );
             }

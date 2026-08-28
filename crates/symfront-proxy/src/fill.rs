@@ -267,9 +267,7 @@ impl FillRegistry {
 }
 
 /// Wait for a follower's outcome.
-pub async fn await_outcome(
-    mut rx: watch::Receiver<Option<FlightOutcome>>,
-) -> FlightOutcome {
+pub async fn await_outcome(mut rx: watch::Receiver<Option<FlightOutcome>>) -> FlightOutcome {
     loop {
         if let Some(outcome) = rx.borrow_and_update().clone() {
             return outcome;

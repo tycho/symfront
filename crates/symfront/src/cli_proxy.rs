@@ -39,10 +39,16 @@ pub fn stats(config_dir: &Path) -> Result<()> {
     }
     let mut positive = (0u64, 0u64);
     let mut negative = 0u64;
-    println!("{:<20} {:>10} {:>12} {:>10}", "upstream", "entries", "bytes", "kind");
+    println!(
+        "{:<20} {:>10} {:>12} {:>10}",
+        "upstream", "entries", "bytes", "kind"
+    );
     for (upstream, is_positive, count, bytes) in &rows {
         let kind = if *is_positive { "positive" } else { "negative" };
-        println!("{upstream:<20} {count:>10} {:>12} {kind:>10}", human(*bytes));
+        println!(
+            "{upstream:<20} {count:>10} {:>12} {kind:>10}",
+            human(*bytes)
+        );
         if *is_positive {
             positive.0 += count;
             positive.1 += bytes;
@@ -126,7 +132,10 @@ pub fn import(config_dir: &Path, from: &Path, copy: bool, dry_run: bool) -> Resu
     let old_db_path = from.join("db/metadata.db");
     let old_data = from.join("storage/data");
     if !old_db_path.is_file() {
-        bail!("{} not found (expected a symsrv cache root)", old_db_path.display());
+        bail!(
+            "{} not found (expected a symsrv cache root)",
+            old_db_path.display()
+        );
     }
     if !old_data.is_dir() {
         bail!("{} not found", old_data.display());
@@ -197,7 +206,11 @@ pub fn import(config_dir: &Path, from: &Path, copy: bool, dry_run: bool) -> Resu
                 missing += 1;
                 continue;
             }
-            let new_file = new_root.join("data").join(&hex[0..2]).join(&hex[2..4]).join(&hex);
+            let new_file = new_root
+                .join("data")
+                .join(&hex[0..2])
+                .join(&hex[2..4])
+                .join(&hex);
             if !dry_run && !new_file.exists() {
                 std::fs::create_dir_all(new_file.parent().unwrap())?;
                 if copy {

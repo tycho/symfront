@@ -24,7 +24,12 @@ pub struct Finding {
     pub message: String,
 }
 
-fn finding(severity: Severity, code: &'static str, subject: impl Into<String>, message: impl Into<String>) -> Finding {
+fn finding(
+    severity: Severity,
+    code: &'static str,
+    subject: impl Into<String>,
+    message: impl Into<String>,
+) -> Finding {
     Finding {
         severity,
         code,
@@ -223,7 +228,9 @@ pub fn check_admin(store: &Store, index: &StoreIndex) -> Result<Vec<Finding>> {
             Severity::Error,
             "lastid-behind",
             last.to_string(),
-            format!("lastid.txt is {last} but ids up to {max} exist; new transactions could collide"),
+            format!(
+                "lastid.txt is {last} but ids up to {max} exist; new transactions could collide"
+            ),
         )),
         (None, Some(max)) => out.push(finding(
             Severity::Error,
@@ -264,7 +271,11 @@ pub fn check_deep(index: &StoreIndex, scan: &ScanResult) -> Vec<Finding> {
                     rel,
                     format!(
                         "referenced by {} but has no refs.ptr",
-                        active.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")
+                        active
+                            .iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ),
                 ));
             }

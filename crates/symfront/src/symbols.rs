@@ -210,8 +210,8 @@ pub(crate) async fn serve_file(
         Some(lm) => lm,
         None => httpdate::fmt_http_date(md.modified()?),
     };
-    let modified: SystemTime = httpdate::parse_http_date(&last_modified)
-        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let modified: SystemTime =
+        httpdate::parse_http_date(&last_modified).unwrap_or(SystemTime::UNIX_EPOCH);
 
     let mut base = Response::builder()
         .header(header::ETAG, &etag)

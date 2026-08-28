@@ -99,7 +99,11 @@ fn matches_python_reference() {
                     want.ext.as_deref().unwrap_or("<none>"),
                     q.ext.as_deref().unwrap_or("<none>"),
                 );
-                check("inbound_layout", &want.inbound_layout, q.inbound_layout.name());
+                check(
+                    "inbound_layout",
+                    &want.inbound_layout,
+                    q.inbound_layout.name(),
+                );
                 check(
                     "ident",
                     want.ident.as_deref().unwrap_or("<none>"),

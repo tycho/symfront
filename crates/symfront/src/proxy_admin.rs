@@ -119,7 +119,10 @@ pub(crate) async fn cache_delete_entry(
         .get(&key)
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let Some(entry) = entry else {
-        return Err(ApiError(StatusCode::NOT_FOUND, "no such cache entry".into()));
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "no such cache entry".into(),
+        ));
     };
     engine
         .cache
@@ -154,7 +157,10 @@ pub(crate) async fn cache_evict_matching(
             "refusing to evict the whole cache; give at least one filter".into(),
         ));
     }
-    let who = ctx.as_ref().map(|c| c.user.name.as_str()).unwrap_or("<open server>");
+    let who = ctx
+        .as_ref()
+        .map(|c| c.user.name.as_str())
+        .unwrap_or("<open server>");
     let keys = engine
         .cache
         .db
@@ -193,13 +199,18 @@ pub(crate) async fn cache_evict_matching(
 
 pub(crate) async fn run_eviction(State(state): State<App>) -> ApiResult<Response> {
     let engine = engine_of(&state)?;
-    let job = spawn_async_job(Arc::clone(&state), "proxy-evict", "cache eviction".into(), {
-        async move {
-            let progress = MaintProgress::default();
-            let report = engine.evict_pass(&progress).await;
-            Ok(serde_json::to_value(&report)?)
-        }
-    });
+    let job = spawn_async_job(
+        Arc::clone(&state),
+        "proxy-evict",
+        "cache eviction".into(),
+        {
+            async move {
+                let progress = MaintProgress::default();
+                let report = engine.evict_pass(&progress).await;
+                Ok(serde_json::to_value(&report)?)
+            }
+        },
+    );
     Ok((StatusCode::ACCEPTED, Json(json!({ "job": job }))).into_response())
 }
 
@@ -317,7 +328,9 @@ pub(crate) async fn config_rollback(
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")))?;
-    Ok(Json(json!({ "ok": true, "commit": id, "summary": summary })))
+    Ok(Json(
+        json!({ "ok": true, "commit": id, "summary": summary }),
+    ))
 }
 
 /// The editable config files, by exact name.
@@ -356,7 +369,10 @@ pub(crate) async fn config_get_file(
 ) -> ApiResult<Json<serde_json::Value>> {
     let dir = config_dir_of(&state)?;
     if !EDITABLE.contains(&name.as_str()) {
-        return Err(ApiError(StatusCode::NOT_FOUND, "unknown config file".into()));
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "unknown config file".into(),
+        ));
     }
     let text = std::fs::read_to_string(dir.join(&name)).unwrap_or_default();
     Ok(Json(json!({ "name": name, "content": text })))
@@ -379,10 +395,8 @@ fn validate_config(name: &str, content: &str) -> Result<(), String> {
         n => {
             // Proxy-side files: the parsers take paths; validate via a
             // temp file so a bad save can never half-apply.
-            let tmp = std::env::temp_dir().join(format!(
-                ".symfront-validate-{}-{n}",
-                std::process::id()
-            ));
+            let tmp =
+                std::env::temp_dir().join(format!(".symfront-validate-{}-{n}", std::process::id()));
             if let Err(e) = std::fs::write(&tmp, content) {
                 return err(e.to_string());
             }
@@ -412,7 +426,10 @@ pub(crate) async fn config_put_file(
 ) -> ApiResult<Json<serde_json::Value>> {
     let dir = config_dir_of(&state)?;
     if !EDITABLE.contains(&name.as_str()) {
-        return Err(ApiError(StatusCode::NOT_FOUND, "unknown config file".into()));
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            "unknown config file".into(),
+        ));
     }
     validate_config(&name, &req.content)
         .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{name}: {e}")))?;
@@ -436,5 +453,7 @@ pub(crate) async fn config_put_file(
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")))?;
-    Ok(Json(json!({ "ok": true, "commit": commit, "summary": summary })))
+    Ok(Json(
+        json!({ "ok": true, "commit": commit, "summary": summary }),
+    ))
 }

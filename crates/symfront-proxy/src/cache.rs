@@ -125,9 +125,7 @@ impl CacheStore {
         let step = match previous {
             // Re-confirmed miss after the previous negative TTL ran out:
             // advance one step (saturating at the ladder end).
-            Some(prev) if !prev.is_positive() => {
-                (prev.negative_step + 1).min(ttl.max_step())
-            }
+            Some(prev) if !prev.is_positive() => (prev.negative_step + 1).min(ttl.max_step()),
             _ => 0,
         };
         let now = now_unix();
@@ -189,10 +187,7 @@ impl CacheStore {
                     }
                     continue;
                 }
-                let key = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .and_then(unhex32);
+                let key = path.file_name().and_then(|n| n.to_str()).and_then(unhex32);
                 f(key, &path, md.len());
             }
             Ok(())

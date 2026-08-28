@@ -21,7 +21,9 @@ use sha2::{Digest, Sha256};
 
 pub const SESSION_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, clap::ValueEnum, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, Debug, clap::ValueEnum, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     /// Read-only: browse, search, reports.
@@ -188,7 +190,10 @@ impl AuthDb {
     }
 
     pub fn add_user(&self, name: &str, password: Option<&str>, role: Role) -> Result<()> {
-        if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || "-_.@".contains(c))
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.@".contains(c))
         {
             bail!("user names are limited to ASCII alphanumerics and -_.@");
         }

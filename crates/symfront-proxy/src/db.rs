@@ -247,13 +247,11 @@ impl MetaDb {
     }
 
     /// All keys with (status, size), streamed in batches for scrub.
-    pub fn for_each_entry(
-        &self,
-        mut f: impl FnMut(&[u8; 32], u16, u64),
-    ) -> Result<()> {
+    pub fn for_each_entry(&self, mut f: impl FnMut(&[u8; 32], u16, u64)) -> Result<()> {
         self.with_reader(|conn| {
-            let mut stmt = conn
-                .prepare_cached("SELECT cache_key, status_code, content_length FROM cache_entries")?;
+            let mut stmt = conn.prepare_cached(
+                "SELECT cache_key, status_code, content_length FROM cache_entries",
+            )?;
             let mut q = stmt.query([])?;
             while let Some(row) = q.next()? {
                 let key: Vec<u8> = row.get(0)?;
@@ -394,7 +392,6 @@ impl MetaDb {
             .map_err(|_| DbError::WriterGone)?;
         rx.await.map_err(|_| DbError::WriterGone)
     }
-
 }
 
 impl Drop for MetaDb {
@@ -416,31 +413,31 @@ fn writer_loop(conn: Connection, mut rx: mpsc::Receiver<WriteOp>) {
         std::collections::HashMap::new();
     let mut last_flush = Instant::now();
 
-    let flush_touches = |conn: &Connection,
-                         touches: &mut std::collections::HashMap<[u8; 32], (f64, f64, u64)>| {
-        if touches.is_empty() {
-            return;
-        }
-        let result = (|| -> rusqlite::Result<()> {
-            let tx = conn.unchecked_transaction()?;
-            {
-                let mut stmt = tx.prepare_cached(
-                    "UPDATE cache_entries SET accessed_at = ?, expires_at = ?, \
-                     hit_count = hit_count + ? WHERE cache_key = ?",
-                )?;
-                for (key, (at, exp, hits)) in touches.iter() {
-                    stmt.execute(params![at, exp, *hits as i64, key.to_vec()])?;
-                }
+    let flush_touches =
+        |conn: &Connection, touches: &mut std::collections::HashMap<[u8; 32], (f64, f64, u64)>| {
+            if touches.is_empty() {
+                return;
             }
-            tx.commit()
-        })();
-        if let Err(e) = result {
-            tracing::error!("flushing {} cache touches: {e}", touches.len());
-        } else {
-            tracing::debug!("flushed {} cache touches", touches.len());
-        }
-        touches.clear();
-    };
+            let result = (|| -> rusqlite::Result<()> {
+                let tx = conn.unchecked_transaction()?;
+                {
+                    let mut stmt = tx.prepare_cached(
+                        "UPDATE cache_entries SET accessed_at = ?, expires_at = ?, \
+                     hit_count = hit_count + ? WHERE cache_key = ?",
+                    )?;
+                    for (key, (at, exp, hits)) in touches.iter() {
+                        stmt.execute(params![at, exp, *hits as i64, key.to_vec()])?;
+                    }
+                }
+                tx.commit()
+            })();
+            if let Err(e) = result {
+                tracing::error!("flushing {} cache touches: {e}", touches.len());
+            } else {
+                tracing::debug!("flushed {} cache touches", touches.len());
+            }
+            touches.clear();
+        };
 
     loop {
         let op = rx.blocking_recv();

@@ -159,7 +159,7 @@ pub fn minimal_portable_pdb(guid: [u8; 16]) -> Vec<u8> {
     out.extend_from_slice(version);
     out.extend_from_slice(&0u16.to_le_bytes()); // flags
     out.extend_from_slice(&1u16.to_le_bytes()); // stream count
-    // Stream header for #Pdb: offset fixed up after layout.
+                                                // Stream header for #Pdb: offset fixed up after layout.
     let header_pos = out.len();
     out.extend_from_slice(&0u32.to_le_bytes()); // offset (patched)
     out.extend_from_slice(&20u32.to_le_bytes()); // size
@@ -178,6 +178,9 @@ pub fn guid_hex(g: &[u8; 16]) -> String {
         u32::from_le_bytes([g[0], g[1], g[2], g[3]]),
         u16::from_le_bytes([g[4], g[5]]),
         u16::from_le_bytes([g[6], g[7]]),
-        g[8..16].iter().map(|b| format!("{b:02X}")).collect::<String>()
+        g[8..16]
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<String>()
     )
 }

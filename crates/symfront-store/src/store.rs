@@ -81,7 +81,9 @@ impl Store {
             return Ok(Vec::new());
         }
         let text = self.read_text(&path)?;
-        Ok(format::lines(&text).map(format::parse_history_line).collect())
+        Ok(format::lines(&text)
+            .map(format::parse_history_line)
+            .collect())
     }
 
     /// `server.txt` holds one add record per currently-active transaction.

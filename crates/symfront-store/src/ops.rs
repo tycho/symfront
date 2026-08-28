@@ -110,11 +110,15 @@ pub fn delete_transaction(
         ..Default::default()
     };
     for b in bad {
-        out.warnings.push(format!("unparsed manifest line kept out of scope: {b}"));
+        out.warnings
+            .push(format!("unparsed manifest line kept out of scope: {b}"));
     }
 
     // Dedupe dirs: a manifest normally lists each dir once, but be safe.
-    let mut dirs: Vec<(String, String)> = entries.iter().map(|e| (e.name.clone(), e.hash.clone())).collect();
+    let mut dirs: Vec<(String, String)> = entries
+        .iter()
+        .map(|e| (e.name.clone(), e.hash.clone()))
+        .collect();
     dirs.sort_by_key(|a| (a.0.to_lowercase(), a.1.to_lowercase()));
     dirs.dedup_by(|a, b| a.0.eq_ignore_ascii_case(&b.0) && a.1.eq_ignore_ascii_case(&b.1));
 
@@ -164,7 +168,8 @@ fn delete_one_ref(
         Some(d) => d,
         None => {
             out.dirs_missing += 1;
-            out.warnings.push(format!("{name}/{hash}: directory missing"));
+            out.warnings
+                .push(format!("{name}/{hash}: directory missing"));
             return Ok(());
         }
     };
@@ -253,7 +258,11 @@ fn find_ci(dir: &Path, target: &str) -> Option<PathBuf> {
         return Some(exact);
     }
     for ent in fs::read_dir(dir).ok()?.flatten() {
-        if ent.file_name().to_string_lossy().eq_ignore_ascii_case(target) {
+        if ent
+            .file_name()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(target)
+        {
             return Some(ent.path());
         }
     }
@@ -298,7 +307,8 @@ fn append_history_line(store: &Store, line: &str) -> Result<()> {
     if !existing.is_empty() && !existing.ends_with(b"\n") {
         f.write_all(b"\r\n").map_err(|e| Error::io(&path, e))?;
     }
-    f.write_all(line.as_bytes()).map_err(|e| Error::io(&path, e))?;
+    f.write_all(line.as_bytes())
+        .map_err(|e| Error::io(&path, e))?;
     Ok(())
 }
 
@@ -307,9 +317,9 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 fn write_file_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    let dir = path.parent().ok_or_else(|| {
-        Error::Refused(format!("no parent dir for {}", path.display()))
-    })?;
+    let dir = path
+        .parent()
+        .ok_or_else(|| Error::Refused(format!("no parent dir for {}", path.display())))?;
     let tmp = dir.join(format!(
         ".symfront.tmp.{}",
         path.file_name().unwrap_or_default().to_string_lossy()
@@ -415,8 +425,10 @@ pub fn add_transaction(
         if seen.insert((f.name.to_lowercase(), f.hash.to_lowercase())) {
             files.push(f);
         } else {
-            out.warnings
-                .push(format!("{}\\{}: listed twice in request; using first", f.name, f.hash));
+            out.warnings.push(format!(
+                "{}\\{}: listed twice in request; using first",
+                f.name, f.hash
+            ));
         }
     }
 
@@ -425,9 +437,7 @@ pub fn add_transaction(
         write_file(&journal, format!("adding {id}\n").as_bytes())?;
     }
 
-    progress
-        .total
-        .store(files.len() as u64, Ordering::Relaxed);
+    progress.total.store(files.len() as u64, Ordering::Relaxed);
     for f in &files {
         add_one_payload(store, id, f, dry_run, req.consume, progress, &mut out)?;
         progress.done.fetch_add(1, Ordering::Relaxed);
@@ -539,7 +549,8 @@ fn add_one_payload(
                     .open(&refs_path)
                     .map_err(|e| Error::io(&refs_path, e))?;
                 if !bytes.is_empty() && !bytes.ends_with(b"\n") {
-                    fh.write_all(b"\r\n").map_err(|e| Error::io(&refs_path, e))?;
+                    fh.write_all(b"\r\n")
+                        .map_err(|e| Error::io(&refs_path, e))?;
                 }
                 fh.write_all(line.as_bytes())
                     .map_err(|e| Error::io(&refs_path, e))?;
@@ -627,7 +638,9 @@ pub fn prune_strays(
     };
     let mut parents: Vec<PathBuf> = Vec::new();
 
-    progress.total.store(rel_paths.len() as u64, Ordering::Relaxed);
+    progress
+        .total
+        .store(rel_paths.len() as u64, Ordering::Relaxed);
     for rel in rel_paths {
         progress.done.fetch_add(1, Ordering::Relaxed);
         let rel_path = Path::new(rel);
@@ -639,7 +652,9 @@ pub fn prune_strays(
             return Err(Error::Refused(format!("path escapes store: {rel}")));
         }
         if rel_path.starts_with(crate::store::ADMIN_DIR) {
-            return Err(Error::Refused(format!("refusing to prune inside 000Admin: {rel}")));
+            return Err(Error::Refused(format!(
+                "refusing to prune inside 000Admin: {rel}"
+            )));
         }
         let abs = root.join(rel_path);
         let md = match fs::symlink_metadata(&abs) {

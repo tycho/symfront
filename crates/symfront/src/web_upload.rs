@@ -31,7 +31,7 @@ use symfront_ident as ident;
 use symfront_ident::FileKind;
 use symfront_store::ops::{AddFile, AddRequest};
 
-use crate::web::{spawn_add_job, App, ApiError};
+use crate::web::{spawn_add_job, ApiError, App};
 
 type ApiResult<T> = std::result::Result<T, ApiError>;
 
@@ -100,7 +100,7 @@ fn err(code: StatusCode, msg: impl Into<String>) -> ApiError {
 }
 
 fn random_id() -> String {
-        let mut buf = [0u8; 12];
+    let mut buf = [0u8; 12];
     getrandom::fill(&mut buf).expect("OS RNG");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -138,11 +138,7 @@ pub(crate) async fn begin(
     }
     prune_stale(&state);
     let id = random_id();
-    let dir = state
-        .store
-        .admin_dir()
-        .join(STAGING_DIR)
-        .join(&id);
+    let dir = state.store.admin_dir().join(STAGING_DIR).join(&id);
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -213,7 +209,11 @@ fn find_store_payload(store: &symfront_store::Store, name: &str, hash: &str) -> 
             return Some(exact);
         }
         for ent in std::fs::read_dir(dir).ok()?.flatten() {
-            if ent.file_name().to_string_lossy().eq_ignore_ascii_case(target) {
+            if ent
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(target)
+            {
                 return Some(ent.path());
             }
         }
@@ -503,9 +503,7 @@ pub(crate) fn restore_staging_sessions(state: &App) {
                 staged,
                 records,
                 counter,
-                last_activity: Instant::now()
-                    .checked_sub(age)
-                    .unwrap_or_else(Instant::now),
+                last_activity: Instant::now().checked_sub(age).unwrap_or_else(Instant::now),
             })
         })();
         match restored {
@@ -518,7 +516,10 @@ pub(crate) fn restore_staging_sessions(state: &App) {
                 state.uploads.lock().unwrap().insert(id, s);
             }
             None => {
-                tracing::info!("removing expired/unreadable upload staging {}", dir.display());
+                tracing::info!(
+                    "removing expired/unreadable upload staging {}",
+                    dir.display()
+                );
                 let _ = std::fs::remove_dir_all(&dir);
             }
         }

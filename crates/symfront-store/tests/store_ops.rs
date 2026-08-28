@@ -78,8 +78,16 @@ fn fixture() -> Fixture {
     let orphan = root.join("orphan.exe").join("DEAD0001");
     fs::create_dir_all(&orphan).unwrap();
     fs::write(orphan.join("orphan.exe"), b"orphan-payload").unwrap();
-    fs::write(orphan.join("refs.ptr"), "0000000099,file,\"C:\\gone\",bin,,N,,").unwrap();
-    fs::write(root.join("a.exe").join("AAAA1000").join("junk.tmp"), b"junk").unwrap();
+    fs::write(
+        orphan.join("refs.ptr"),
+        "0000000099,file,\"C:\\gone\",bin,,N,,",
+    )
+    .unwrap();
+    fs::write(
+        root.join("a.exe").join("AAAA1000").join("junk.tmp"),
+        b"junk",
+    )
+    .unwrap();
     fs::write(root.join("b.exe").join("stray-note.txt"), b"note").unwrap();
 
     Fixture { _tmp: tmp, root }
@@ -128,7 +136,9 @@ fn scan_and_strays() {
     assert!(paths.contains(&"a.exe/AAAA1000/junk.tmp"));
     assert!(paths.contains(&"b.exe/stray-note.txt"));
     // Legitimate payloads are not strays.
-    assert!(!paths.iter().any(|p| p.ends_with("shared.pdb/S1/shared.pdb")));
+    assert!(!paths
+        .iter()
+        .any(|p| p.ends_with("shared.pdb/S1/shared.pdb")));
     assert_eq!(report.totals.unreferenced_dirs, 1);
     assert!(report.missing.is_empty());
 
@@ -157,12 +167,14 @@ fn delete_respects_refcounts() {
     let (store, _index) = load(&f.root);
 
     // Dry run mutates nothing.
-    let dry = ops::delete_transaction(&store, TransactionId(1), true, &ops::OpProgress::default()).unwrap();
+    let dry = ops::delete_transaction(&store, TransactionId(1), true, &ops::OpProgress::default())
+        .unwrap();
     assert!(dry.dry_run);
     assert!(f.root.join("a.exe/AAAA1000/a.exe").exists());
     assert!(store.admin_dir().join("0000000001").exists());
 
-    let out = ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default()).unwrap();
+    let out = ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default())
+        .unwrap();
     assert_eq!(out.del_id, Some(TransactionId(3)));
     // a.exe refcount hit zero: payload and dirs gone (junk.tmp keeps the dir).
     assert!(!f.root.join("a.exe/AAAA1000/a.exe").exists());
@@ -195,7 +207,8 @@ fn delete_respects_refcounts() {
     assert_eq!(index.dir_refs("shared.pdb", "s1").len(), 1);
 
     // Deleting again fails cleanly.
-    let err = ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default()).unwrap_err();
+    let err = ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default())
+        .unwrap_err();
     assert!(matches!(err, symfront_store::Error::TxNotActive(..)));
 
     // Deleting tx2 empties the store payload side entirely.
@@ -235,9 +248,27 @@ fn prune_removes_strays_and_empty_dirs() {
 fn prune_refuses_escapes_and_admin() {
     let f = fixture();
     let (store, _) = load(&f.root);
-    assert!(ops::prune_strays(&store, &["../etc/passwd".into()], false, &ops::OpProgress::default()).is_err());
-    assert!(ops::prune_strays(&store, &["000Admin/history.txt".into()], false, &ops::OpProgress::default()).is_err());
-    assert!(ops::prune_strays(&store, &["/etc/passwd".into()], false, &ops::OpProgress::default()).is_err());
+    assert!(ops::prune_strays(
+        &store,
+        &["../etc/passwd".into()],
+        false,
+        &ops::OpProgress::default()
+    )
+    .is_err());
+    assert!(ops::prune_strays(
+        &store,
+        &["000Admin/history.txt".into()],
+        false,
+        &ops::OpProgress::default()
+    )
+    .is_err());
+    assert!(ops::prune_strays(
+        &store,
+        &["/etc/passwd".into()],
+        false,
+        &ops::OpProgress::default()
+    )
+    .is_err());
 }
 
 #[test]
@@ -310,9 +341,7 @@ fn ident_matches_live_store() {
         if checked >= 200 {
             break;
         }
-        if !name_dir.file_type().unwrap().is_dir()
-            || name_dir.file_name() == "000Admin"
-        {
+        if !name_dir.file_type().unwrap().is_dir() || name_dir.file_name() == "000Admin" {
             continue;
         }
         let fname = name_dir.file_name().to_string_lossy().into_owned();
@@ -343,7 +372,11 @@ fn add_transaction_roundtrip() {
     fs::create_dir_all(root.join("000Admin")).unwrap();
     let src = tmp.path().join("src");
     fs::create_dir_all(&src).unwrap();
-    fs::write(src.join("7zr.exe"), fixtures::minimal_pe(0x5685393C, 0xbf000, true)).unwrap();
+    fs::write(
+        src.join("7zr.exe"),
+        fixtures::minimal_pe(0x5685393C, 0xbf000, true),
+    )
+    .unwrap();
     let guid = *b"\x69\x47\xd8\xfb\x3a\x2a\xde\x46\x84\x01\x7f\x48\x0a\xcf\x33\x89";
     fs::write(
         src.join("3dquicklogicplugin.pdb"),
@@ -441,8 +474,14 @@ fn pdb_age_uses_dbi_stream() {
     }
     let cases = [
         // (file, expected hash from the paired DLL's RSDS record)
-        ("Microsoft.ConfigCI.Commands.pdb", "57D8363310B240CCBC9CE9D78163C38D1"),
-        ("Microsoft.Data.Entity.Build.Tasks.pdb", "F002579388CE46038E78A8AAB55AEAEE1"),
+        (
+            "Microsoft.ConfigCI.Commands.pdb",
+            "57D8363310B240CCBC9CE9D78163C38D1",
+        ),
+        (
+            "Microsoft.Data.Entity.Build.Tasks.pdb",
+            "F002579388CE46038E78A8AAB55AEAEE1",
+        ),
         // Portable PDB (BSJB): GUID from #Pdb stream + literal FFFFFFFF;
         // verified live: msdl serves this exact file under this key.
         (
@@ -472,9 +511,21 @@ fn data_dir() -> std::path::PathBuf {
 /// exactly match the generators (pins generator behavior).
 fn replay_inputs() -> Vec<(&'static str, Vec<u8>, &'static str)> {
     vec![
-        ("a.exe", fixtures::minimal_pe(0x5FA00000, 0x3000, true), "5FA000003000"),
-        ("b.exe", fixtures::minimal_pe(0x5FB00000, 0x4000, false), "5FB000004000"),
-        ("shared.exe", fixtures::minimal_pe(0x5FC00000, 0x5000, true), "5FC000005000"),
+        (
+            "a.exe",
+            fixtures::minimal_pe(0x5FA00000, 0x3000, true),
+            "5FA000003000",
+        ),
+        (
+            "b.exe",
+            fixtures::minimal_pe(0x5FB00000, 0x4000, false),
+            "5FB000004000",
+        ),
+        (
+            "shared.exe",
+            fixtures::minimal_pe(0x5FC00000, 0x5000, true),
+            "5FC000005000",
+        ),
     ]
 }
 
@@ -524,16 +575,28 @@ fn ident_synthetic() {
     let ghex = fixtures::guid_hex(&guid);
 
     let pe64 = write("x64.exe", &fixtures::minimal_pe(0x11223344, 0xABC00, true));
-    assert_eq!(symfront_ident::identify(&pe64).unwrap().unwrap().1, "11223344abc00");
+    assert_eq!(
+        symfront_ident::identify(&pe64).unwrap().unwrap().1,
+        "11223344abc00"
+    );
     let pe32 = write("x86.exe", &fixtures::minimal_pe(0x01020304, 0x1000, false));
-    assert_eq!(symfront_ident::identify(&pe32).unwrap().unwrap().1, "010203041000");
+    assert_eq!(
+        symfront_ident::identify(&pe32).unwrap().unwrap().1,
+        "010203041000"
+    );
 
     // Age mismatch: DBI age (1) must win over info age (3).
     let pdb = write("m.pdb", &fixtures::minimal_msf_pdb(guid, 3, Some(1)));
-    assert_eq!(symfront_ident::identify(&pdb).unwrap().unwrap().1, format!("{ghex}1"));
+    assert_eq!(
+        symfront_ident::identify(&pdb).unwrap().unwrap().1,
+        format!("{ghex}1")
+    );
     // No DBI stream: info age is the fallback.
     let pdb2 = write("n.pdb", &fixtures::minimal_msf_pdb(guid, 3, None));
-    assert_eq!(symfront_ident::identify(&pdb2).unwrap().unwrap().1, format!("{ghex}3"));
+    assert_eq!(
+        symfront_ident::identify(&pdb2).unwrap().unwrap().1,
+        format!("{ghex}3")
+    );
     // Portable PDB: literal FFFFFFFF.
     let ppdb = write("p.pdb", &fixtures::minimal_portable_pdb(guid));
     assert_eq!(
@@ -563,7 +626,11 @@ fn reference_store_parses_and_hashes_match() {
     assert!(check::check_admin(&store, &index).unwrap().is_empty());
     let scan = scan::scan(&store, true, &ScanProgress::default()).unwrap();
     let report = strays::analyze(&index, &scan).strays;
-    assert!(report.strays.is_empty() && report.missing.is_empty(), "{:?}", report.strays);
+    assert!(
+        report.strays.is_empty() && report.missing.is_empty(),
+        "{:?}",
+        report.strays
+    );
 }
 
 // ---- replay: add, add (shared), del, re-add ----
@@ -597,8 +664,7 @@ fn replay_with_ours(root: &Path) {
     };
     add(&["a.exe", "shared.exe", "tiny.pdb"]); // tx 1
     add(&["b.exe", "shared.exe", "tiny.exe"]); // tx 2
-    ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default())
-        .unwrap(); // tx 3 = del 1 (drops a.exe and tiny.pdb payloads)
+    ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default()).unwrap(); // tx 3 = del 1 (drops a.exe and tiny.pdb payloads)
     add(&["a.exe"]); // tx 4
 }
 
@@ -612,7 +678,8 @@ fn tree_summary(root: &Path) -> Vec<String> {
     for d in &scan.hash_dirs {
         for f in &d.files {
             if f.name.eq_ignore_ascii_case("refs.ptr") {
-                let text = fs::read_to_string(root.join(&d.name).join(&d.hash).join(&f.name)).unwrap();
+                let text =
+                    fs::read_to_string(root.join(&d.name).join(&d.hash).join(&f.name)).unwrap();
                 let refs: Vec<String> = symfront_store::format::lines(&text)
                     .map(|l| {
                         let fields: Vec<&str> = l.split(',').collect();
@@ -621,7 +688,10 @@ fn tree_summary(root: &Path) -> Vec<String> {
                     .collect();
                 out.push(format!("{}/{} refs: {}", d.name, d.hash, refs.join(" | ")));
             } else {
-                out.push(format!("{}/{} payload: {} ({} bytes)", d.name, d.hash, f.name, f.size));
+                out.push(format!(
+                    "{}/{} payload: {} ({} bytes)",
+                    d.name, d.hash, f.name, f.size
+                ));
             }
         }
     }
@@ -632,7 +702,10 @@ fn tree_summary(root: &Path) -> Vec<String> {
             t.file_state,
             t.deleted_by.iter().map(|d| d.0).collect::<Vec<_>>(),
             t.entry_count,
-            t.record.as_ref().map(|r| r.product.clone()).unwrap_or_default(),
+            t.record
+                .as_ref()
+                .map(|r| r.product.clone())
+                .unwrap_or_default(),
         ));
     }
     out.push(format!("lastid={:?}", store.read_lastid().unwrap()));

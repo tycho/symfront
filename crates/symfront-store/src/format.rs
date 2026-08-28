@@ -28,7 +28,7 @@ pub fn split_fields(line: &str) -> Vec<String> {
             }
             fields.push(line[start..end].to_string());
             i = end + 1; // past closing quote
-            // Skip to the comma separator (tolerate stray junk).
+                         // Skip to the comma separator (tolerate stray junk).
             while i < bytes.len() && bytes[i] != b',' {
                 i += 1;
             }
@@ -84,7 +84,9 @@ pub enum HistoryRecord {
     Add(AddRecord),
     Del(DelRecord),
     /// A line we could not interpret; preserved verbatim for diagnostics.
-    Unknown { raw: String },
+    Unknown {
+        raw: String,
+    },
 }
 
 impl HistoryRecord {
@@ -221,7 +223,9 @@ mod tests {
 
     #[test]
     fn split_quoted() {
-        let f = split_fields(r#"0000000001,add,file,01/31/2025,07:36:53,"Darwinia <= 2.3.3-761","","","#);
+        let f = split_fields(
+            r#"0000000001,add,file,01/31/2025,07:36:53,"Darwinia <= 2.3.3-761","","","#,
+        );
         assert_eq!(f[0], "0000000001");
         assert_eq!(f[5], "Darwinia <= 2.3.3-761");
         assert_eq!(f[6], "");
@@ -235,7 +239,9 @@ mod tests {
 
     #[test]
     fn parse_add() {
-        let r = parse_history_line(r#"0000000718,add,file,08/27/2026,01:16:11,"LLVM","23.1.0-rc3","","#);
+        let r = parse_history_line(
+            r#"0000000718,add,file,08/27/2026,01:16:11,"LLVM","23.1.0-rc3","","#,
+        );
         match r {
             HistoryRecord::Add(a) => {
                 assert_eq!(a.id, TransactionId(718));
@@ -266,8 +272,9 @@ mod tests {
 
     #[test]
     fn parse_entry() {
-        let e = parse_tx_entry(r#""clang-cl.exe\316AFF9178d9000","C:\LLVM\23.1.0\bin\clang-cl.exe""#)
-            .unwrap();
+        let e =
+            parse_tx_entry(r#""clang-cl.exe\316AFF9178d9000","C:\LLVM\23.1.0\bin\clang-cl.exe""#)
+                .unwrap();
         assert_eq!(e.name, "clang-cl.exe");
         assert_eq!(e.hash, "316AFF9178d9000");
         assert_eq!(e.source, r"C:\LLVM\23.1.0\bin\clang-cl.exe");

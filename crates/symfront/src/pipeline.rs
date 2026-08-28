@@ -90,7 +90,10 @@ pub(crate) fn reload(state: &ProxyState) -> anyhow::Result<String> {
 }
 
 /// Background loops: health probes, periodic eviction, weekly scrub.
-pub(crate) fn spawn_background(state: Arc<ProxyState>, shutdown: Arc<std::sync::atomic::AtomicBool>) {
+pub(crate) fn spawn_background(
+    state: Arc<ProxyState>,
+    shutdown: Arc<std::sync::atomic::AtomicBool>,
+) {
     let probes = Arc::clone(&state);
     let stop = Arc::clone(&shutdown);
     tokio::spawn(async move {
@@ -321,8 +324,7 @@ async fn render_outcome(
             b.body(Body::from_stream(stream)).unwrap().into_response()
         }
         Outcome::Passthrough { response } => {
-            let status =
-                StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
+            let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
             let mut b = Response::builder().status(status);
             for name in [
                 header::CONTENT_LENGTH,
@@ -338,9 +340,7 @@ async fn render_outcome(
                 return b.body(Body::empty()).unwrap().into_response();
             }
             use futures_util::TryStreamExt;
-            let stream = response
-                .bytes_stream()
-                .map_err(std::io::Error::other);
+            let stream = response.bytes_stream().map_err(std::io::Error::other);
             b.body(Body::from_stream(stream)).unwrap().into_response()
         }
     }
@@ -380,11 +380,23 @@ fn render_metrics(engine: &ProxyEngine, out: &mut String) {
         "symfront_requests_total",
         "Client requests by outcome",
         &[
-            ("{outcome=\"tier0_hit\"}", s.tier0_hits.load(Ordering::Relaxed)),
-            ("{outcome=\"cache_hit\"}", s.cache_hits.load(Ordering::Relaxed)),
+            (
+                "{outcome=\"tier0_hit\"}",
+                s.tier0_hits.load(Ordering::Relaxed),
+            ),
+            (
+                "{outcome=\"cache_hit\"}",
+                s.cache_hits.load(Ordering::Relaxed),
+            ),
             ("{outcome=\"fill\"}", s.fills.load(Ordering::Relaxed)),
-            ("{outcome=\"negative_hit\"}", s.negative_hits.load(Ordering::Relaxed)),
-            ("{outcome=\"passthrough\"}", s.passthroughs.load(Ordering::Relaxed)),
+            (
+                "{outcome=\"negative_hit\"}",
+                s.negative_hits.load(Ordering::Relaxed),
+            ),
+            (
+                "{outcome=\"passthrough\"}",
+                s.passthroughs.load(Ordering::Relaxed),
+            ),
             ("{outcome=\"miss\"}", s.misses.load(Ordering::Relaxed)),
             ("{outcome=\"rejected\"}", s.rejected.load(Ordering::Relaxed)),
             ("{outcome=\"error\"}", s.errors.load(Ordering::Relaxed)),
@@ -395,9 +407,18 @@ fn render_metrics(engine: &ProxyEngine, out: &mut String) {
         "symfront_bytes_total",
         "Body bytes by source",
         &[
-            ("{source=\"cache\"}", s.bytes_from_cache.load(Ordering::Relaxed)),
-            ("{source=\"store\"}", s.bytes_from_store.load(Ordering::Relaxed)),
-            ("{source=\"upstream\"}", s.bytes_fetched.load(Ordering::Relaxed)),
+            (
+                "{source=\"cache\"}",
+                s.bytes_from_cache.load(Ordering::Relaxed),
+            ),
+            (
+                "{source=\"store\"}",
+                s.bytes_from_store.load(Ordering::Relaxed),
+            ),
+            (
+                "{source=\"upstream\"}",
+                s.bytes_fetched.load(Ordering::Relaxed),
+            ),
         ],
     );
     {
@@ -406,8 +427,14 @@ fn render_metrics(engine: &ProxyEngine, out: &mut String) {
         let health = engine.health.snapshot();
         let _ = writeln!(out, "# TYPE symfront_upstream_fills_total counter");
         let _ = writeln!(out, "# TYPE symfront_upstream_errors_total counter");
-        let _ = writeln!(out, "# TYPE symfront_upstream_transport_failures_total counter");
-        let _ = writeln!(out, "# TYPE symfront_upstream_throughput_bytes_per_second gauge");
+        let _ = writeln!(
+            out,
+            "# TYPE symfront_upstream_transport_failures_total counter"
+        );
+        let _ = writeln!(
+            out,
+            "# TYPE symfront_upstream_throughput_bytes_per_second gauge"
+        );
         for (name, u) in ups.iter() {
             let _ = writeln!(
                 out,
@@ -493,9 +520,7 @@ pub(crate) fn stats_json(state: &ProxyState) -> serde_json::Value {
         .health
         .snapshot()
         .into_iter()
-        .map(|(name, (suspended, info))| {
-            (name, json!({ "suspended": suspended, "info": info }))
-        })
+        .map(|(name, (suspended, info))| (name, json!({ "suspended": suspended, "info": info })))
         .collect::<serde_json::Map<String, serde_json::Value>>()
         .into();
     let cache = match engine.cache.db.summary() {

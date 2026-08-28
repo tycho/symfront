@@ -320,28 +320,27 @@ pub(crate) fn spawn_add_job(state: &App, request: ops::AddRequest, staging_dir: 
 fn spawn_admin_watcher(state: App) -> anyhow::Result<notify::RecommendedWatcher> {
     use notify::Watcher;
     let (tx, rx) = std::sync::mpsc::channel::<()>();
-    let mut watcher =
-        notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            let Ok(ev) = res else { return };
-            // Reads don't change anything — and our own index reloads/scans
-            // read these files, so reacting to Access events would loop.
-            if matches!(ev.kind, notify::EventKind::Access(_)) {
-                return;
-            }
-            // Ignore our own scratch files (lock, temp rewrites, journals).
-            let only_ours = !ev.paths.is_empty()
-                && ev.paths.iter().all(|p| {
-                    p.file_name()
-                        .map(|n| {
-                            let n = n.to_string_lossy();
-                            n.starts_with(".symfront") || n.starts_with(ops::JOURNAL_PREFIX)
-                        })
-                        .unwrap_or(false)
-                });
-            if !only_ours {
-                let _ = tx.send(());
-            }
-        })?;
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(ev) = res else { return };
+        // Reads don't change anything — and our own index reloads/scans
+        // read these files, so reacting to Access events would loop.
+        if matches!(ev.kind, notify::EventKind::Access(_)) {
+            return;
+        }
+        // Ignore our own scratch files (lock, temp rewrites, journals).
+        let only_ours = !ev.paths.is_empty()
+            && ev.paths.iter().all(|p| {
+                p.file_name()
+                    .map(|n| {
+                        let n = n.to_string_lossy();
+                        n.starts_with(".symfront") || n.starts_with(ops::JOURNAL_PREFIX)
+                    })
+                    .unwrap_or(false)
+            });
+        if !only_ours {
+            let _ = tx.send(());
+        }
+    })?;
     let admin = state.store.admin_dir();
     watcher.watch(&admin, notify::RecursiveMode::NonRecursive)?;
     tracing::info!("watching {} for external changes", admin.display());
@@ -394,10 +393,7 @@ pub(crate) fn forwarded_https(state: &AppState, headers: &HeaderMap) -> bool {
 /// header is ignored entirely and the TCP peer address is used.
 fn resolve_client_ip(state: &AppState, peer: Option<SocketAddr>, headers: &HeaderMap) -> String {
     if state.trusted_proxies > 0 {
-        if let Some(xff) = headers
-            .get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok())
-        {
+        if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
             let entries: Vec<&str> = xff.split(',').map(|s| s.trim()).collect();
             if !entries.is_empty() {
                 let idx = entries.len().saturating_sub(state.trusted_proxies);
@@ -477,7 +473,9 @@ async fn auth_middleware(State(state): State<App>, mut req: Request, next: Next)
         if !ctx.via_session {
             return (
                 StatusCode::FORBIDDEN,
-                Json(json!({ "error": "API tokens cannot manage accounts; sign in to the web UI" })),
+                Json(
+                    json!({ "error": "API tokens cannot manage accounts; sign in to the web UI" }),
+                ),
             )
                 .into_response();
         }
@@ -524,11 +522,9 @@ async fn login(
     let db = Arc::clone(&auth.db);
     let username = req.username.clone();
     // argon2 verification is deliberately slow; keep it off the async threads.
-    let user = tokio::task::spawn_blocking(move || {
-        db.verify_password(&username, &req.password)
-    })
-    .await
-    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+    let user = tokio::task::spawn_blocking(move || db.verify_password(&username, &req.password))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
     let Some(user) = user else {
         tracing::warn!("failed login for {:?} from {ip}", req.username);
         return Err(ApiError(
@@ -540,7 +536,7 @@ async fn login(
     // session exists.
     if auth.db.totp_secret(user.id)?.is_some() {
         let login_token = {
-                        let mut buf = [0u8; 24];
+            let mut buf = [0u8; 24];
             getrandom::fill(&mut buf).expect("OS RNG");
             buf.iter().map(|b| format!("{b:02x}")).collect::<String>()
         };
@@ -551,8 +547,9 @@ async fn login(
                 created: Instant::now(),
             },
         );
-        return Ok(Json(json!({ "totp_required": true, "login_token": login_token }))
-            .into_response());
+        return Ok(
+            Json(json!({ "totp_required": true, "login_token": login_token })).into_response(),
+        );
     }
     web_account::issue_session(auth, &user, forwarded_https(&state, &headers), &ip)
 }
@@ -713,7 +710,10 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         spawn_sighup_reload(Arc::clone(&proxy));
         let app = Router::new()
             .route("/metrics", get(crate::pipeline::metrics))
-            .route("/symbols/{*path}", get(crate::pipeline::serve_symbols_alias))
+            .route(
+                "/symbols/{*path}",
+                get(crate::pipeline::serve_symbols_alias),
+            )
             .fallback(crate::pipeline::serve_root)
             .with_state(Arc::clone(&proxy));
         let shutdown = async {
@@ -784,8 +784,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         .route("/api/upload/{id}/check", post(crate::web_upload::check))
         .route(
             "/api/upload/{id}/file",
-            post(crate::web_upload::upload_file)
-                .layer(axum::extract::DefaultBodyLimit::disable()),
+            post(crate::web_upload::upload_file).layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/upload/{id}/commit", post(crate::web_upload::commit))
         .route("/api/upload/{id}", get(crate::web_upload::session_status))
@@ -793,43 +792,106 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         .route("/api/jobs/{id}", get(crate::web_upload::job_status))
         .route("/api/login", post(login))
         .route("/api/login/totp", post(web_account::login_totp))
-        .route("/api/login/webauthn/start", post(web_account::login_webauthn_start))
-        .route("/api/login/webauthn/finish", post(web_account::login_webauthn_finish))
+        .route(
+            "/api/login/webauthn/start",
+            post(web_account::login_webauthn_start),
+        )
+        .route(
+            "/api/login/webauthn/finish",
+            post(web_account::login_webauthn_finish),
+        )
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
         .route("/api/account", get(web_account::account_overview))
         .route("/api/account/password", post(web_account::change_password))
         .route("/api/account/tokens", get(web_account::my_tokens))
         .route("/api/account/tokens", post(web_account::create_my_token))
-        .route("/api/account/tokens/{id}", delete(web_account::revoke_my_token))
+        .route(
+            "/api/account/tokens/{id}",
+            delete(web_account::revoke_my_token),
+        )
         .route("/api/account/totp/setup", post(web_account::totp_setup))
         .route("/api/account/totp/enable", post(web_account::totp_enable))
         .route("/api/account/totp/disable", post(web_account::totp_disable))
         .route("/api/account/passkeys", get(web_account::my_passkeys))
-        .route("/api/account/passkeys/register/start", post(web_account::passkey_register_start))
-        .route("/api/account/passkeys/register/finish", post(web_account::passkey_register_finish))
-        .route("/api/account/passkeys/{id}", delete(web_account::passkey_delete))
+        .route(
+            "/api/account/passkeys/register/start",
+            post(web_account::passkey_register_start),
+        )
+        .route(
+            "/api/account/passkeys/register/finish",
+            post(web_account::passkey_register_finish),
+        )
+        .route(
+            "/api/account/passkeys/{id}",
+            delete(web_account::passkey_delete),
+        )
         .route("/api/admin/users", get(web_account::admin_users))
         .route("/api/admin/users", post(web_account::admin_add_user))
-        .route("/api/admin/users/{name}", delete(web_account::admin_delete_user))
-        .route("/api/admin/users/{name}/role", post(web_account::admin_set_role))
-        .route("/api/admin/users/{name}/password", post(web_account::admin_set_password))
-        .route("/api/admin/users/{name}/reset-2fa", post(web_account::admin_reset_2fa))
+        .route(
+            "/api/admin/users/{name}",
+            delete(web_account::admin_delete_user),
+        )
+        .route(
+            "/api/admin/users/{name}/role",
+            post(web_account::admin_set_role),
+        )
+        .route(
+            "/api/admin/users/{name}/password",
+            post(web_account::admin_set_password),
+        )
+        .route(
+            "/api/admin/users/{name}/reset-2fa",
+            post(web_account::admin_reset_2fa),
+        )
         .route("/api/proxy/stats", get(crate::proxy_admin::proxy_stats))
-        .route("/api/proxy/upstreams/{name}/suspend", post(crate::proxy_admin::suspend_upstream))
-        .route("/api/proxy/upstreams/{name}/resume", post(crate::proxy_admin::resume_upstream))
-        .route("/api/proxy/cache/search", get(crate::proxy_admin::cache_search))
-        .route("/api/proxy/cache/entry/{key}", delete(crate::proxy_admin::cache_delete_entry))
-        .route("/api/proxy/cache/evict", post(crate::proxy_admin::cache_evict_matching))
+        .route(
+            "/api/proxy/upstreams/{name}/suspend",
+            post(crate::proxy_admin::suspend_upstream),
+        )
+        .route(
+            "/api/proxy/upstreams/{name}/resume",
+            post(crate::proxy_admin::resume_upstream),
+        )
+        .route(
+            "/api/proxy/cache/search",
+            get(crate::proxy_admin::cache_search),
+        )
+        .route(
+            "/api/proxy/cache/entry/{key}",
+            delete(crate::proxy_admin::cache_delete_entry),
+        )
+        .route(
+            "/api/proxy/cache/evict",
+            post(crate::proxy_admin::cache_evict_matching),
+        )
         .route("/api/proxy/evict", post(crate::proxy_admin::run_eviction))
         .route("/api/proxy/scrub", post(crate::proxy_admin::run_scrub))
-        .route("/api/admin/config/reload", post(crate::proxy_admin::config_reload))
+        .route(
+            "/api/admin/config/reload",
+            post(crate::proxy_admin::config_reload),
+        )
         .route("/api/admin/config/log", get(crate::proxy_admin::config_log))
-        .route("/api/admin/config/diff", get(crate::proxy_admin::config_diff))
-        .route("/api/admin/config/rollback", post(crate::proxy_admin::config_rollback))
-        .route("/api/admin/config/files", get(crate::proxy_admin::config_files))
-        .route("/api/admin/config/file/{name}", get(crate::proxy_admin::config_get_file))
-        .route("/api/admin/config/file/{name}", post(crate::proxy_admin::config_put_file))
+        .route(
+            "/api/admin/config/diff",
+            get(crate::proxy_admin::config_diff),
+        )
+        .route(
+            "/api/admin/config/rollback",
+            post(crate::proxy_admin::config_rollback),
+        )
+        .route(
+            "/api/admin/config/files",
+            get(crate::proxy_admin::config_files),
+        )
+        .route(
+            "/api/admin/config/file/{name}",
+            get(crate::proxy_admin::config_get_file),
+        )
+        .route(
+            "/api/admin/config/file/{name}",
+            post(crate::proxy_admin::config_put_file),
+        )
         // SPA-style fallback: unknown non-API /admin paths (incl. the bare
         // "/admin/" form, which nest doesn't route to "/") get the shell.
         .fallback(admin_shell);
@@ -842,7 +904,10 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             get(|| async { axum::response::Redirect::temporary("/admin/") }),
         )
         .route("/metrics", get(crate::pipeline::metrics))
-        .route("/symbols/{*path}", get(crate::pipeline::serve_symbols_alias))
+        .route(
+            "/symbols/{*path}",
+            get(crate::pipeline::serve_symbols_alias),
+        )
         // nest() maps "/admin" to the nested "/" but leaves "/admin/"
         // unmatched; the SPA needs the trailing-slash form (relative api/
         // paths), so route it explicitly.
@@ -930,8 +995,7 @@ async fn serve_app(
 fn spawn_sighup_reload(proxy: Arc<crate::pipeline::ProxyState>) {
     #[cfg(unix)]
     tokio::spawn(async move {
-        let Ok(mut hup) =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+        let Ok(mut hup) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
         else {
             return;
         };
@@ -998,7 +1062,10 @@ fn state_snapshot(state: &App) -> serde_json::Value {
     let jobs_json: Vec<serde_json::Value> = {
         let mut jobs = state.jobs.lock().unwrap();
         jobs.retain(|j| match *j.finished_at.lock().unwrap() {
-            Some(t) => t.elapsed().map(|e| e < Duration::from_secs(300)).unwrap_or(true),
+            Some(t) => t
+                .elapsed()
+                .map(|e| e < Duration::from_secs(300))
+                .unwrap_or(true),
             None => true,
         });
         jobs.iter().map(|j| j.to_json()).collect()
@@ -1222,10 +1289,11 @@ async fn tx_delete(
         match index.transactions.get(&id) {
             None => return Err(symfront_store::Error::TxNotFound(id).into()),
             Some(t) if !t.is_active() => {
-                return Err(
-                    symfront_store::Error::TxNotActive(id, "not an active transaction".into())
-                        .into(),
+                return Err(symfront_store::Error::TxNotActive(
+                    id,
+                    "not an active transaction".into(),
                 )
+                .into())
             }
             _ => {}
         }

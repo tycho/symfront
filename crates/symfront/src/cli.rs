@@ -126,7 +126,13 @@ pub fn upload(
     }
     println!("{} file(s) identified:", candidates.len());
     for c in &candidates {
-        println!("  {:?}  {}/{}  <- {}", c.kind, c.name, c.hash, c.path.display());
+        println!(
+            "  {:?}  {}/{}  <- {}",
+            c.kind,
+            c.name,
+            c.hash,
+            c.path.display()
+        );
     }
     let store = Store::open(store_path)?;
     let req = ops::AddRequest {
@@ -171,8 +177,17 @@ pub fn status(store_path: &Path) -> anyhow::Result<()> {
         .filter(|t| !t.deleted_by.is_empty())
         .count();
     println!("store:        {}", store.root().display());
-    println!("last id:      {}", index.lastid.map(|i| i.to_string()).unwrap_or_else(|| "?".into()));
-    println!("transactions: {active} active, {deleted} deleted, {} del records", index.dels.len());
+    println!(
+        "last id:      {}",
+        index
+            .lastid
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| "?".into())
+    );
+    println!(
+        "transactions: {active} active, {deleted} deleted, {} del records",
+        index.dels.len()
+    );
     println!("entries:      {} indexed files", index.entries.len());
     println!("hash dirs:    {} referenced", index.referenced_dirs().len());
     let journals = ops::pending_journals(&store)?;
@@ -199,9 +214,15 @@ pub fn tx_list(store_path: &Path, all: bool, sizes: bool) -> anyhow::Result<()> 
     };
 
     if sizes {
-        println!("{:>10}  {:<10} {:>7}  {:>10} {:>10} {:>10}  {:<28} version", "id", "date", "entries", "apparent", "on-disk", "exclusive", "product");
+        println!(
+            "{:>10}  {:<10} {:>7}  {:>10} {:>10} {:>10}  {:<28} version",
+            "id", "date", "entries", "apparent", "on-disk", "exclusive", "product"
+        );
     } else {
-        println!("{:>10}  {:<10} {:>7}  {:<28} version", "id", "date", "entries", "product");
+        println!(
+            "{:>10}  {:<10} {:>7}  {:<28} version",
+            "id", "date", "entries", "product"
+        );
     }
     for t in index.transactions.values() {
         let active = t.is_active();
@@ -282,7 +303,11 @@ pub fn tx_show(store_path: &Path, id: TransactionId) -> anyhow::Result<()> {
     if !t.deleted_by.is_empty() {
         println!(
             "  DELETED by {}",
-            t.deleted_by.iter().map(|d| d.to_string()).collect::<Vec<_>>().join(", ")
+            t.deleted_by
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
     println!("  manifest: {:?}, {} entries", t.file_state, t.entry_count);
@@ -342,7 +367,12 @@ pub fn tx_show(store_path: &Path, id: TransactionId) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn tx_del(store_path: &Path, id: TransactionId, dry_run: bool, yes: bool) -> anyhow::Result<()> {
+pub fn tx_del(
+    store_path: &Path,
+    id: TransactionId,
+    dry_run: bool,
+    yes: bool,
+) -> anyhow::Result<()> {
     let (store, index) = open(store_path)?;
     let Some(t) = index.transactions.get(&id) else {
         bail!("transaction {id} not found");
@@ -363,12 +393,22 @@ pub fn tx_del(store_path: &Path, id: TransactionId, dry_run: bool, yes: bool) ->
             bail!("aborted");
         }
     }
-    let out = with_op_progress("deleting", |p| ops::delete_transaction(&store, id, dry_run, p))?;
+    let out = with_op_progress("deleting", |p| {
+        ops::delete_transaction(&store, id, dry_run, p)
+    })?;
     let verb = if dry_run { "would delete" } else { "deleted" };
     println!("{verb} transaction {id}:");
     println!("  {} entries", out.entries);
-    println!("  {} dirs removed, {} still referenced by other transactions, {} already missing", out.dirs_removed, out.dirs_still_referenced, out.dirs_missing);
-    println!("  {} files removed, freeing {} apparent / {} on disk", out.files_removed, human(out.freed_apparent), human(out.freed_disk));
+    println!(
+        "  {} dirs removed, {} still referenced by other transactions, {} already missing",
+        out.dirs_removed, out.dirs_still_referenced, out.dirs_missing
+    );
+    println!(
+        "  {} files removed, freeing {} apparent / {} on disk",
+        out.files_removed,
+        human(out.freed_apparent),
+        human(out.freed_disk)
+    );
     if let Some(del_id) = out.del_id {
         println!("  recorded as del transaction {del_id}");
     }
@@ -436,7 +476,11 @@ pub fn strays(store_path: &Path, prune: bool, dry_run: bool) -> anyhow::Result<(
             m.name,
             m.hash,
             m.tx,
-            if m.dir_missing { "dir absent" } else { "dir present but no payload" }
+            if m.dir_missing {
+                "dir absent"
+            } else {
+                "dir present but no payload"
+            }
         );
     }
 
@@ -477,13 +521,29 @@ pub fn check(store_path: &Path, deep: bool) -> anyhow::Result<()> {
         }
     }
     if findings.is_empty() {
-        println!("no problems found{}", if deep { "" } else { " (admin records; use --deep for a full tree check)" });
+        println!(
+            "no problems found{}",
+            if deep {
+                ""
+            } else {
+                " (admin records; use --deep for a full tree check)"
+            }
+        );
         return Ok(());
     }
     for f in &findings {
-        println!("{:<7} {:<20} {}: {}", format!("{:?}", f.severity).to_lowercase(), f.code, f.subject, f.message);
+        println!(
+            "{:<7} {:<20} {}: {}",
+            format!("{:?}", f.severity).to_lowercase(),
+            f.code,
+            f.subject,
+            f.message
+        );
     }
-    let errors = findings.iter().filter(|f| f.severity == check::Severity::Error).count();
+    let errors = findings
+        .iter()
+        .filter(|f| f.severity == check::Severity::Error)
+        .count();
     println!("\n{} finding(s), {errors} error(s)", findings.len());
     if errors > 0 {
         std::process::exit(1);
@@ -515,7 +575,10 @@ pub fn config_init(dir: &Path) -> anyhow::Result<()> {
     if written > 0 && store.is_dirty()? {
         store.commit_all(&whoami(), "symfront config init")?;
     }
-    println!("config tree ready in {} (history: git repo inside)", dir.display());
+    println!(
+        "config tree ready in {} (history: git repo inside)",
+        dir.display()
+    );
     Ok(())
 }
 

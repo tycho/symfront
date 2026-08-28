@@ -261,17 +261,20 @@ impl ProxyEngine {
         if !live.is_empty() {
             tracing::debug!(
                 "querying upstreams {:?} for {path:?}",
-                live.iter().map(|c| c.upstream.name.as_str()).collect::<Vec<_>>()
+                live.iter()
+                    .map(|c| c.upstream.name.as_str())
+                    .collect::<Vec<_>>()
             );
         }
         let mut server_error: Option<(u16, FillMeta)> = None;
-        match self.fan_out(&live, req.method, &req.symbol_checksum, &mut server_error).await {
+        match self
+            .fan_out(&live, req.method, &req.symbol_checksum, &mut server_error)
+            .await
+        {
             Some(outcome) => {
                 let kind = match &outcome {
                     Outcome::Passthrough { .. } => RequestOutcome::Passthrough,
-                    Outcome::CacheHit { .. } | Outcome::AccelHit { .. } => {
-                        RequestOutcome::CacheHit
-                    }
+                    Outcome::CacheHit { .. } | Outcome::AccelHit { .. } => RequestOutcome::CacheHit,
                     _ => RequestOutcome::Fill,
                 };
                 self.stats.count(kind);
@@ -379,7 +382,9 @@ impl ProxyEngine {
             let neg =
                 self.cache
                     .negative_entry(&cand.key, status, None, &self.ttl_for(&cand.upstream));
-            self.cache.db.write_nowait(WriteOp::Upsert(Box::new(neg), None));
+            self.cache
+                .db
+                .write_nowait(WriteOp::Upsert(Box::new(neg), None));
             let path = self.cache.data_path(&cand.key.hash);
             slot.publish(FlightOutcome::Status(status));
             let _ = tokio::task::spawn_blocking(move || std::fs::remove_file(path)).await;
@@ -441,9 +446,7 @@ impl ProxyEngine {
         loop {
             // Launch a due tier — immediately when nothing is in flight
             // (waiting out the stagger with an empty pipeline is pure loss).
-            if next_tier.is_some()
-                && (Instant::now() >= deadline || pending.is_empty())
-            {
+            if next_tier.is_some() && (Instant::now() >= deadline || pending.is_empty()) {
                 for c in next_tier.take().unwrap() {
                     pending.push(self.attempt(c, method, checksum));
                 }
@@ -575,8 +578,14 @@ impl ProxyEngine {
                 cand.prior.as_ref(),
                 &self.ttl_for(&cand.upstream),
             );
-            let was_positive = cand.prior.as_ref().map(|p| p.is_positive()).unwrap_or(false);
-            self.cache.db.write_nowait(WriteOp::Upsert(Box::new(neg), None));
+            let was_positive = cand
+                .prior
+                .as_ref()
+                .map(|p| p.is_positive())
+                .unwrap_or(false);
+            self.cache
+                .db
+                .write_nowait(WriteOp::Upsert(Box::new(neg), None));
             if was_positive {
                 // Positive → negative transition: the stale payload file is
                 // dead weight now.
@@ -722,7 +731,6 @@ impl ProxyEngine {
             }
         }
     }
-
 }
 
 fn apply_checksum(

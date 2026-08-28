@@ -57,7 +57,11 @@ impl UpstreamStats {
         let rate = bytes as f64 / seconds;
         // EMA with alpha 0.2; racy read-modify-write is fine for a metric.
         let old = self.throughput();
-        let new = if old == 0.0 { rate } else { old * 0.8 + rate * 0.2 };
+        let new = if old == 0.0 {
+            rate
+        } else {
+            old * 0.8 + rate * 0.2
+        };
         self.throughput_ema.store(new.to_bits(), Ordering::Relaxed);
     }
 }

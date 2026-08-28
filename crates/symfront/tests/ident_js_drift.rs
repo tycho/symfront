@@ -99,7 +99,11 @@ class FileShim {{
                     path.display()
                 );
             }
-            None => assert!(js.is_null(), "{}: JS identified what Rust didn't", path.display()),
+            None => assert!(
+                js.is_null(),
+                "{}: JS identified what Rust didn't",
+                path.display()
+            ),
         }
     }
 }

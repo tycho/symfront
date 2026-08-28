@@ -13,13 +13,11 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::json;
-use webauthn_rs::prelude::{
-    Passkey, PublicKeyCredential, RegisterPublicKeyCredential, Uuid,
-};
+use webauthn_rs::prelude::{Passkey, PublicKeyCredential, RegisterPublicKeyCredential, Uuid};
 
 use crate::auth::{Role, SESSION_TTL};
 use crate::totp;
-use crate::web::{App, ApiError, AuthCtx, AuthState, PendingLogin, PendingReg};
+use crate::web::{ApiError, App, AuthCtx, AuthState, PendingLogin, PendingReg};
 
 type ApiResult<T> = std::result::Result<T, ApiError>;
 
@@ -41,7 +39,10 @@ fn auth_state(state: &App) -> ApiResult<&Arc<AuthState>> {
 fn session_user(ctx: &Option<Extension<AuthCtx>>) -> ApiResult<&AuthCtx> {
     match ctx {
         Some(Extension(c)) => Ok(c),
-        None => Err(err(StatusCode::BAD_REQUEST, "authentication is not enabled")),
+        None => Err(err(
+            StatusCode::BAD_REQUEST,
+            "authentication is not enabled",
+        )),
     }
 }
 
@@ -53,7 +54,7 @@ fn unix_now() -> u64 {
 }
 
 fn random_token() -> String {
-        let mut buf = [0u8; 24];
+    let mut buf = [0u8; 24];
     getrandom::fill(&mut buf).expect("OS RNG");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -124,12 +125,7 @@ pub(crate) async fn login_totp(
                 pending.remove(&req.login_token);
                 id
             }
-            _ => {
-                return Err(err(
-                    StatusCode::UNAUTHORIZED,
-                    "login expired; start again",
-                ))
-            }
+            _ => return Err(err(StatusCode::UNAUTHORIZED, "login expired; start again")),
         }
     };
     let secret = auth
@@ -144,7 +140,12 @@ pub(crate) async fn login_totp(
         .db
         .user_by_id(user_id)?
         .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "user no longer exists"))?;
-    issue_session(auth, &user, crate::web::forwarded_https(&state, &headers), &ip)
+    issue_session(
+        auth,
+        &user,
+        crate::web::forwarded_https(&state, &headers),
+        &ip,
+    )
 }
 
 // ---------- login: WebAuthn ----------
@@ -161,7 +162,10 @@ pub(crate) async fn login_webauthn_start(
     let auth = auth_state(&state)?;
     prune_pending(auth);
     let webauthn = auth.webauthn.as_ref().ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "webauthn is not configured on this server")
+        err(
+            StatusCode::BAD_REQUEST,
+            "webauthn is not configured on this server",
+        )
     })?;
     let Some(user) = auth.db.user_by_name(&req.username)? else {
         return Err(err(StatusCode::UNAUTHORIZED, "no passkeys registered"));
@@ -186,7 +190,9 @@ pub(crate) async fn login_webauthn_start(
             created: Instant::now(),
         },
     );
-    Ok(Json(json!({ "login_token": login_token, "challenge": rcr })))
+    Ok(Json(
+        json!({ "login_token": login_token, "challenge": rcr }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -203,7 +209,10 @@ pub(crate) async fn login_webauthn_finish(
 ) -> ApiResult<Response> {
     let auth = auth_state(&state)?;
     let webauthn = auth.webauthn.as_ref().ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "webauthn is not configured on this server")
+        err(
+            StatusCode::BAD_REQUEST,
+            "webauthn is not configured on this server",
+        )
     })?;
     let ceremony = {
         let mut pending = auth.pending_logins.lock().unwrap();
@@ -257,7 +266,10 @@ pub(crate) async fn change_password(
     let auth = auth_state(&state)?;
     let ctx = session_user(&ctx)?.clone();
     if req.new_password.len() < 8 {
-        return Err(err(StatusCode::BAD_REQUEST, "new password must be at least 8 characters"));
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "new password must be at least 8 characters",
+        ));
     }
     let db = Arc::clone(&auth.db);
     let (name, user_id) = (ctx.user.name.clone(), ctx.user.id);
@@ -346,7 +358,9 @@ pub(crate) async fn totp_setup(
                 .build()
         })
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(json!({ "secret": secret, "otpauth_url": url, "qr_svg": qr_svg })))
+    Ok(Json(
+        json!({ "secret": secret, "otpauth_url": url, "qr_svg": qr_svg }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -421,7 +435,10 @@ pub(crate) async fn passkey_register_start(
     let auth = auth_state(&state)?;
     let ctx = session_user(&ctx)?;
     let webauthn = auth.webauthn.as_ref().ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "webauthn is not configured on this server")
+        err(
+            StatusCode::BAD_REQUEST,
+            "webauthn is not configured on this server",
+        )
     })?;
     prune_pending(auth);
     let exclude: Vec<_> = auth
@@ -436,7 +453,11 @@ pub(crate) async fn passkey_register_start(
             Uuid::from_u128(ctx.user.id as u128),
             &ctx.user.name,
             &ctx.user.name,
-            if exclude.is_empty() { None } else { Some(exclude) },
+            if exclude.is_empty() {
+                None
+            } else {
+                Some(exclude)
+            },
         )
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let reg_token = random_token();
@@ -467,18 +488,31 @@ pub(crate) async fn passkey_register_finish(
     let auth = auth_state(&state)?;
     let ctx = session_user(&ctx)?;
     let webauthn = auth.webauthn.as_ref().ok_or_else(|| {
-        err(StatusCode::BAD_REQUEST, "webauthn is not configured on this server")
+        err(
+            StatusCode::BAD_REQUEST,
+            "webauthn is not configured on this server",
+        )
     })?;
     let reg = {
         let mut regs = auth.pending_regs.lock().unwrap();
         match regs.remove(&req.reg_token) {
             Some(r) if r.user_id == ctx.user.id => r,
-            _ => return Err(err(StatusCode::BAD_REQUEST, "registration expired; start again")),
+            _ => {
+                return Err(err(
+                    StatusCode::BAD_REQUEST,
+                    "registration expired; start again",
+                ))
+            }
         }
     };
     let passkey = webauthn
         .finish_passkey_registration(&req.credential, &reg.state)
-        .map_err(|e| err(StatusCode::BAD_REQUEST, format!("registration rejected: {e}")))?;
+        .map_err(|e| {
+            err(
+                StatusCode::BAD_REQUEST,
+                format!("registration rejected: {e}"),
+            )
+        })?;
     auth.db.passkey_add(
         ctx.user.id,
         &req.name,
@@ -546,11 +580,20 @@ pub(crate) async fn admin_add_user(
     let ctx = session_user(&ctx)?;
     if let Some(p) = &req.password {
         if p.len() < 8 {
-            return Err(err(StatusCode::BAD_REQUEST, "password must be at least 8 characters"));
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "password must be at least 8 characters",
+            ));
         }
     }
-    auth.db.add_user(&req.name, req.password.as_deref(), req.role)?;
-    tracing::info!("admin {} created user {} ({})", ctx.user.name, req.name, req.role);
+    auth.db
+        .add_user(&req.name, req.password.as_deref(), req.role)?;
+    tracing::info!(
+        "admin {} created user {} ({})",
+        ctx.user.name,
+        req.name,
+        req.role
+    );
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -610,7 +653,10 @@ pub(crate) async fn admin_set_password(
     let auth = auth_state(&state)?;
     let ctx = session_user(&ctx)?;
     if req.password.len() < 8 {
-        return Err(err(StatusCode::BAD_REQUEST, "password must be at least 8 characters"));
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "password must be at least 8 characters",
+        ));
     }
     auth.db.set_password(&name, &req.password)?;
     tracing::info!("admin {} reset password of {name}", ctx.user.name);
@@ -625,6 +671,9 @@ pub(crate) async fn admin_reset_2fa(
     let auth = auth_state(&state)?;
     let ctx = session_user(&ctx)?;
     auth.db.clear_second_factors(&name)?;
-    tracing::info!("admin {} cleared TOTP and passkeys of {name}", ctx.user.name);
+    tracing::info!(
+        "admin {} cleared TOTP and passkeys of {name}",
+        ctx.user.name
+    );
     Ok(Json(json!({ "ok": true })))
 }

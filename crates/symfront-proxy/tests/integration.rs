@@ -72,9 +72,8 @@ async fn fake_handler(
         Some(Reply::SlowBody(b, delay)) => {
             let mid = b.len() / 2;
             let (a, z) = (b[..mid].to_vec(), b[mid..].to_vec());
-            let stream = futures_util::stream::unfold(
-                (0u8, a, z, delay),
-                |(i, a, z, delay)| async move {
+            let stream =
+                futures_util::stream::unfold((0u8, a, z, delay), |(i, a, z, delay)| async move {
                     match i {
                         0 => Some((Ok::<_, std::io::Error>(a.clone()), (1, a, z, delay))),
                         1 => {
@@ -83,8 +82,7 @@ async fn fake_handler(
                         }
                         _ => None,
                     }
-                },
-            );
+                });
             Response::builder()
                 .header("content-length", b.len())
                 .body(Body::from_stream(stream))
@@ -184,11 +182,7 @@ fn test_config(dir: &std::path::Path) -> ProxyConfig {
     }
 }
 
-fn engine_with(
-    dir: &std::path::Path,
-    cfg: ProxyConfig,
-    ups: Vec<Upstream>,
-) -> Arc<ProxyEngine> {
+fn engine_with(dir: &std::path::Path, cfg: ProxyConfig, ups: Vec<Upstream>) -> Arc<ProxyEngine> {
     let _ = dir;
     ProxyEngine::new(cfg, ups, Blacklist::default()).unwrap()
 }
@@ -258,7 +252,11 @@ async fn wait_flight_done(engine: &Arc<ProxyEngine>, upstream_name: &str, url: &
 async fn fill_then_hit() {
     let fake = Fake::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let engine = engine_with(dir.path(), test_config(dir.path()), vec![upstream("u", &fake.base_url())]);
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
     fake.set(PDB, Reply::Body(b"pdb-bytes".to_vec()));
 
     let (status, body) = fetch(&engine, PDB).await;
@@ -270,7 +268,10 @@ async fn fill_then_hit() {
     assert_eq!((status, body.as_slice()), (200, b"pdb-bytes".as_slice()));
     assert_eq!(fake.hits(PDB), 1, "second request must be a cache hit");
     assert_eq!(
-        engine.stats.cache_hits.load(std::sync::atomic::Ordering::Relaxed),
+        engine
+            .stats
+            .cache_hits
+            .load(std::sync::atomic::Ordering::Relaxed),
         1
     );
 }
@@ -307,7 +308,11 @@ async fn negative_ladder_advances() {
     assert_eq!(entry.status, 404);
     // Step 1 is fresh for an hour: no upstream traffic now.
     assert_eq!(fetch(&engine, PDB).await.0, 404);
-    assert_eq!(fake.hits(PDB), 2, "fresh negative entry must be served from cache");
+    assert_eq!(
+        fake.hits(PDB),
+        2,
+        "fresh negative entry must be served from cache"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -317,7 +322,10 @@ async fn revalidation_304_refreshes() {
     let mut cfg = test_config(dir.path());
     cfg.ttl.positive = Duration::from_secs(0); // born expired
     let engine = engine_with(dir.path(), cfg, vec![upstream("u", &fake.base_url())]);
-    fake.set(PDB, Reply::Conditional("\"v1\"".into(), b"payload".to_vec()));
+    fake.set(
+        PDB,
+        Reply::Conditional("\"v1\"".into(), b"payload".to_vec()),
+    );
 
     let (status, body) = fetch(&engine, PDB).await;
     assert_eq!((status, body.as_slice()), (200, b"payload".as_slice()));
@@ -330,13 +338,18 @@ async fn revalidation_304_refreshes() {
     assert_eq!(fake.hits(PDB), 2);
     let seen = fake.last_seen(PDB).unwrap();
     assert!(
-        seen.headers.iter().any(|(k, v)| k == "if-none-match" && v == "\"v1\""),
+        seen.headers
+            .iter()
+            .any(|(k, v)| k == "if-none-match" && v == "\"v1\""),
         "revalidation must send If-None-Match: {:?}",
         seen.headers
     );
     // No refill happened: body came from cache after the 304.
     assert_eq!(
-        engine.stats.fills.load(std::sync::atomic::Ordering::Relaxed),
+        engine
+            .stats
+            .fills
+            .load(std::sync::atomic::Ordering::Relaxed),
         1
     );
 }
@@ -394,9 +407,16 @@ async fn health_trip_and_probe_restore() {
 async fn singleflight_collapses_concurrent_misses() {
     let fake = Fake::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let engine = engine_with(dir.path(), test_config(dir.path()), vec![upstream("u", &fake.base_url())]);
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
     let body: Vec<u8> = (0..200_000u32).map(|i| i as u8).collect();
-    fake.set(PDB, Reply::SlowBody(body.clone(), Duration::from_millis(150)));
+    fake.set(
+        PDB,
+        Reply::SlowBody(body.clone(), Duration::from_millis(150)),
+    );
 
     let mut tasks = Vec::new();
     for _ in 0..4 {
@@ -408,14 +428,22 @@ async fn singleflight_collapses_concurrent_misses() {
         assert_eq!(status, 200);
         assert_eq!(got, body);
     }
-    assert_eq!(fake.hits(PDB), 1, "one upstream fetch for N concurrent clients");
+    assert_eq!(
+        fake.hits(PDB),
+        1,
+        "one upstream fetch for N concurrent clients"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn server_errors_pass_through_uncached() {
     let fake = Fake::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let engine = engine_with(dir.path(), test_config(dir.path()), vec![upstream("u", &fake.base_url())]);
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
     fake.set(PDB, Reply::Status(503));
 
     assert_eq!(fetch(&engine, PDB).await.0, 503);
@@ -429,7 +457,11 @@ async fn server_errors_pass_through_uncached() {
 async fn head_upgrades_to_get_fill() {
     let fake = Fake::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let engine = engine_with(dir.path(), test_config(dir.path()), vec![upstream("u", &fake.base_url())]);
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
     fake.set(PDB, Reply::Body(b"warmed".to_vec()));
 
     let outcome = engine
@@ -461,9 +493,16 @@ async fn head_upgrades_to_get_fill() {
 async fn client_disconnect_still_commits() {
     let fake = Fake::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let engine = engine_with(dir.path(), test_config(dir.path()), vec![upstream("u", &fake.base_url())]);
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
     let body: Vec<u8> = vec![7u8; 100_000];
-    fake.set(PDB, Reply::SlowBody(body.clone(), Duration::from_millis(100)));
+    fake.set(
+        PDB,
+        Reply::SlowBody(body.clone(), Duration::from_millis(100)),
+    );
 
     let outcome = engine
         .handle(ClientRequest {
@@ -598,7 +637,10 @@ async fn eviction_soonest_expiry_first() {
 
     let report = engine.evict_pass(&MaintProgress::default()).await;
     assert!(report.enabled);
-    assert_eq!(report.evicted_entries, 1, "one eviction reaches the low watermark");
+    assert_eq!(
+        report.evicted_entries, 1,
+        "one eviction reaches the low watermark"
+    );
     // Soonest expiry = the first fill (a.pdb): it must be the one gone.
     let key_a = symfront_proxy::CacheKey::new("u", &format!("{}{}", fake.base_url(), paths[0]));
     let key_c = symfront_proxy::CacheKey::new("u", &format!("{}{}", fake.base_url(), paths[2]));
@@ -611,7 +653,11 @@ async fn eviction_soonest_expiry_first() {
 async fn scrub_repairs_both_directions() {
     let fake = Fake::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let engine = engine_with(dir.path(), test_config(dir.path()), vec![upstream("u", &fake.base_url())]);
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
     let paths = [
         "/a.pdb/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1/a.pdb",
         "/b.pdb/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB1/b.pdb",
@@ -660,11 +706,28 @@ async fn blacklist_and_unclassifiable_reject_without_traffic() {
     )
     .unwrap();
 
-    assert_eq!(fetch(&engine, "/AMDRyzenMasterDriver.pdb/ABC1/AMDRyzenMasterDriver.pdb").await.0, 404);
+    assert_eq!(
+        fetch(
+            &engine,
+            "/AMDRyzenMasterDriver.pdb/ABC1/AMDRyzenMasterDriver.pdb"
+        )
+        .await
+        .0,
+        404
+    );
     assert_eq!(fetch(&engine, "/index2.txt").await.0, 404);
     assert_eq!(fetch(&engine, "/nonsense-no-extension").await.0, 404);
-    assert!(fake.state.hits.lock().unwrap().is_empty(), "no upstream traffic");
-    assert_eq!(engine.stats.rejected.load(std::sync::atomic::Ordering::Relaxed), 3);
+    assert!(
+        fake.state.hits.lock().unwrap().is_empty(),
+        "no upstream traffic"
+    );
+    assert_eq!(
+        engine
+            .stats
+            .rejected
+            .load(std::sync::atomic::Ordering::Relaxed),
+        3
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -677,7 +740,11 @@ async fn disabled_upstream_is_never_used() {
     fake.set(PDB, Reply::Body(b"should never be seen".to_vec()));
 
     assert_eq!(fetch(&engine, PDB).await.0, 404);
-    assert_eq!(fake.hits(PDB), 0, "disabled upstream must receive no traffic");
+    assert_eq!(
+        fake.hits(PDB),
+        0,
+        "disabled upstream must receive no traffic"
+    );
     // Still present in the engine's config (for the admin UI).
     assert_eq!(engine.upstreams.len(), 1);
     assert!(!engine.upstreams[0].enabled);
