@@ -840,3 +840,75 @@ async fn ttfb_medians_split_by_response_class() {
     );
     assert_eq!(stats.latency_2xx.len(), 1, "2xx window unaffected");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn temp_cleanup_only_reaps_abandoned_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = {
+        let fake = Fake::start().await;
+        engine_with(
+            dir.path(),
+            test_config(dir.path()),
+            vec![upstream("u", &fake.base_url())],
+        )
+    };
+    let tmp_dir = dir.path().join("tmp");
+    let fresh = tmp_dir.join("deadbeef.0123456789abcdef.1");
+    let stale = tmp_dir.join("cafebabe.0123456789abcdef.2");
+    std::fs::write(&fresh, b"in flight").unwrap();
+    std::fs::write(&stale, b"crash leftover").unwrap();
+    let two_days_ago = std::time::SystemTime::now() - Duration::from_secs(48 * 3600);
+    let f = std::fs::File::options().write(true).open(&stale).unwrap();
+    f.set_times(std::fs::FileTimes::new().set_modified(two_days_ago))
+        .unwrap();
+    drop(f);
+
+    engine.cache.clean_stale_temps();
+    assert!(
+        fresh.exists(),
+        "recent temp (possibly an in-flight fill) must survive"
+    );
+    assert!(!stale.exists(), "day-old crash leftover must be reaped");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn config_reload_mid_fill_does_not_break_the_fill() {
+    let fake = Fake::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
+    let body: Vec<u8> = vec![9u8; 80_000];
+    fake.set(
+        PDB,
+        Reply::SlowBody(body.clone(), Duration::from_millis(300)),
+    );
+
+    // Start a fill and, while its body is still streaming, rebuild the
+    // engine over the same cache dir — exactly what a config reload does.
+    // The old behavior wiped the in-flight temp file here, so the fill
+    // died at the final rename with ENOENT.
+    let e1 = Arc::clone(&engine);
+    let fill = tokio::spawn(async move { fetch(&e1, PDB).await });
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let engine2 = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
+
+    let (status, got) = fill.await.unwrap();
+    assert_eq!(status, 200);
+    assert_eq!(got, body);
+    // And the fill committed: the *new* engine serves it from cache.
+    let (status, got) = fetch(&engine2, PDB).await;
+    assert_eq!(status, 200);
+    assert_eq!(got, body);
+    assert_eq!(
+        fake.hits(PDB),
+        1,
+        "second engine must hit the committed cache entry"
+    );
+}

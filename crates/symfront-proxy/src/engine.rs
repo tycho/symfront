@@ -662,6 +662,7 @@ impl ProxyEngine {
         let entry = fill_entry_template(cand, &meta, &self.config.ttl);
         let started = Instant::now();
         let engine = Arc::clone(self);
+        let url = cand.key.full_url.clone();
         tokio::spawn(async move {
             let _flight_guard = flight_guard;
             let mut response = response;
@@ -680,7 +681,7 @@ impl ProxyEngine {
                     }
                     Ok(None) => break,
                     Err(e) => {
-                        tracing::warn!("fill stream from upstream failed: {e}");
+                        tracing::warn!("fill of {url} failed mid-stream: {e}");
                         job.abort().await;
                         return;
                     }
@@ -689,13 +690,13 @@ impl ProxyEngine {
             let (finished, total, sha) = match job.finish_disk().await {
                 Ok(x) => x,
                 Err(e) => {
-                    tracing::warn!("fill disk finish failed: {e}");
+                    tracing::warn!("fill of {url}: disk finish failed: {e}");
                     return;
                 }
             };
             if let Some(cl) = expected {
                 if cl != total {
-                    tracing::warn!("fill truncated: got {total} of {cl} bytes");
+                    tracing::warn!("fill of {url} truncated: got {total} of {cl} bytes");
                     finished.fail();
                     return;
                 }

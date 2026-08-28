@@ -43,7 +43,15 @@ pub struct CacheStore {
     data_dir: PathBuf,
     tmp_dir: PathBuf,
     temp_nonce: AtomicU64,
+    /// Per-open discriminator so temp names can't collide across engine
+    /// generations (config reloads rebuild the engine over the same cache
+    /// dir while the old engine's fills may still be running).
+    temp_boot: u64,
 }
+
+/// Temp files older than this are crash leftovers; anything younger may be
+/// an in-flight fill of this — or a previous — engine generation.
+const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
 
 impl CacheStore {
     pub fn open(root: &Path) -> Result<CacheStore, DbError> {
@@ -54,8 +62,14 @@ impl CacheStore {
                 .map_err(|e| DbError::Other(format!("{}: {e}", d.display())))?;
         }
         let db = MetaDb::open(&root.join("metadata.db"))?;
+        let temp_boot = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
+            ^ ((std::process::id() as u64) << 48);
         Ok(CacheStore {
             db,
+            temp_boot,
             root: root.to_path_buf(),
             data_dir,
             tmp_dir,
@@ -84,17 +98,28 @@ impl CacheStore {
     pub fn temp_path(&self, key: &[u8; 32]) -> PathBuf {
         let nonce = self.temp_nonce.fetch_add(1, Ordering::Relaxed);
         self.tmp_dir
-            .join(format!("{}.{}.{}", hex(key), std::process::id(), nonce))
+            .join(format!("{}.{:016x}.{}", hex(key), self.temp_boot, nonce))
     }
 
-    /// Remove stale in-progress files from a previous run.
+    /// Remove crash leftovers from the temp dir. Runs on every engine
+    /// construction — including config reloads, where the previous engine's
+    /// fills may still be streaming — so only clearly-abandoned files
+    /// (older than [`STALE_TEMP_AGE`]) are touched. Fills clean up their
+    /// own temp files on abort/failure; only a crash leaks one.
     pub fn clean_stale_temps(&self) {
         let Ok(rd) = std::fs::read_dir(&self.tmp_dir) else {
             return;
         };
         let mut removed = 0u32;
         for ent in rd.flatten() {
-            if ent.path().is_file() && std::fs::remove_file(ent.path()).is_ok() {
+            let Ok(md) = ent.metadata() else { continue };
+            let abandoned = md
+                .modified()
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .map(|age| age > STALE_TEMP_AGE)
+                .unwrap_or(false);
+            if md.is_file() && abandoned && std::fs::remove_file(ent.path()).is_ok() {
                 removed += 1;
             }
         }
