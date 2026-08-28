@@ -237,6 +237,23 @@ async fn consume(outcome: Outcome) -> (u16, Vec<u8>) {
 
 const PDB: &str = "/foo.pdb/ABCDEF01234567890123456789ABCDEF1/foo.pdb";
 
+/// Wait for a key's fill flight to deregister. A completed fill stays
+/// registered for a few ms after clients see EOF (the pump drops its guard
+/// after the metadata commit); a request landing in that window correctly
+/// becomes a follower of the finished fill instead of hitting the upstream,
+/// which is fine for clients but nondeterministic for hit-count asserts.
+async fn wait_flight_done(engine: &Arc<ProxyEngine>, upstream_name: &str, url: &str) {
+    let key = symfront_proxy::CacheKey::new(upstream_name, url).hash;
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while engine.fills.in_flight(&key) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "fill flight never deregistered"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn fill_then_hit() {
     let fake = Fake::start().await;
@@ -247,9 +264,8 @@ async fn fill_then_hit() {
     let (status, body) = fetch(&engine, PDB).await;
     assert_eq!((status, body.as_slice()), (200, b"pdb-bytes".as_slice()));
     assert_eq!(fake.hits(PDB), 1);
+    wait_flight_done(&engine, "u", &format!("{}{}", fake.base_url(), PDB)).await;
 
-    // Wait for the fill commit (EOF arrives only after the metadata commit,
-    // so the entry must be present).
     let (status, body) = fetch(&engine, PDB).await;
     assert_eq!((status, body.as_slice()), (200, b"pdb-bytes".as_slice()));
     assert_eq!(fake.hits(PDB), 1, "second request must be a cache hit");
@@ -306,6 +322,7 @@ async fn revalidation_304_refreshes() {
     let (status, body) = fetch(&engine, PDB).await;
     assert_eq!((status, body.as_slice()), (200, b"payload".as_slice()));
     assert_eq!(fake.hits(PDB), 1);
+    wait_flight_done(&engine, "u", &format!("{}{}", fake.base_url(), PDB)).await;
 
     // Entry is expired immediately; next request revalidates and gets 304.
     let (status, body) = fetch(&engine, PDB).await;
@@ -333,6 +350,7 @@ async fn stale_while_error() {
     let engine = engine_with(dir.path(), cfg, vec![upstream("u", &fake.base_url())]);
     fake.set(PDB, Reply::Body(b"old-but-gold".to_vec()));
     assert_eq!(fetch(&engine, PDB).await.0, 200);
+    wait_flight_done(&engine, "u", &format!("{}{}", fake.base_url(), PDB)).await;
 
     // A 500 during revalidation takes the serve-stale path (the transport-
     // failure variant of stale-while-error shares the same code path but
