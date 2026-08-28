@@ -921,6 +921,26 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             "/api/admin/config/file/{name}",
             post(crate::proxy_admin::config_put_file),
         )
+        .route(
+            "/api/admin/config/upstreams",
+            get(crate::proxy_admin::upstreams_list),
+        )
+        .route(
+            "/api/admin/config/upstreams",
+            post(crate::proxy_admin::upstream_add),
+        )
+        .route(
+            "/api/admin/config/upstreams/{name}",
+            post(crate::proxy_admin::upstream_update),
+        )
+        .route(
+            "/api/admin/config/upstreams/{name}",
+            delete(crate::proxy_admin::upstream_delete),
+        )
+        .route(
+            "/api/admin/config/upstreams/{name}/enabled",
+            post(crate::proxy_admin::upstream_set_enabled),
+        )
         // SPA-style fallback: unknown non-API /admin paths (incl. the bare
         // "/admin/" form, which nest doesn't route to "/") get the shell.
         .fallback(admin_shell);

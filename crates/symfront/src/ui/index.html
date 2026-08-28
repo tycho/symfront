@@ -1404,24 +1404,31 @@ async function loadProxy() {
   proxyStats = s;
   if (!s.enabled) {
     el.innerHTML = `<div class="banner info">Proxy tier is not configured — add at least one
-      <span class="mono">[[upstream]]</span> to upstreams.toml.</div>
-      ${isAdminUser() ? proxyConfigHtml() : ''}`;
-    if (isAdminUser()) initProxyConfig();
+      upstream.</div>
+      ${isAdminUser() ? `<p><button class="btn" id="upAddBtn">Add upstream…</button></p>
+      <div id="upEditor" hidden></div>` + proxyConfigHtml() : ''}`;
+    if (isAdminUser()) {
+      $('#upAddBtn')?.addEventListener('click', () => openUpstreamEditor(null));
+      initProxyConfig();
+    }
     return;
   }
   el.innerHTML = `
     <div id="proxyLive"></div>
+    ${isAdminUser() ? `<p style="margin-top:10px"><button class="btn" id="upAddBtn">Add upstream…</button></p>
+    <div id="upEditor" hidden></div>` : ''}
     ${canMutate() ? `<p style="margin-top:12px">
       <button class="btn" id="proxyEvictBtn">Run eviction</button>
       <button class="btn" id="proxyScrubBtn">Run scrub</button>
       <span class="muted">eviction also runs automatically; scrub weekly</span></p>` : ''}
     <h3 style="margin-top:20px">Cache entries</h3>
-    <p><input id="proxySearch" placeholder="search cached URLs…" style="width:340px">
+    <p><input type="text" id="proxySearch" placeholder="search cached URLs…">
       <button class="btn" id="proxySearchBtn">Search</button>
       ${canMutate() ? `<button class="btn" id="proxyPurgeNegBtn" title="evict negative entries whose URL contains the search text">Forget matching 404s</button>` : ''}</p>
     <div id="proxySearchOut"></div>
     ${isAdminUser() ? proxyConfigHtml() : ''}`;
   renderProxyLive(s);
+  $('#upAddBtn')?.addEventListener('click', () => openUpstreamEditor(null));
   $('#proxyEvictBtn')?.addEventListener('click', async () => {
     try { await post('api/proxy/evict'); } catch (e) { alert(e.message); }
   });
@@ -1467,11 +1474,17 @@ function renderProxyLive(s) {
         const state = !cfg.enabled ? '<span class="pill anomalous">disabled</span>'
           : h.suspended ? `<span class="pill deleted" title="${esc(h.info?.cause || '')}">suspended</span>`
           : '<span class="pill active">healthy</span>';
-        const act = canMutate() && cfg.enabled
-          ? (h.suspended
-             ? `<button class="btn" data-resume="${esc(name)}">resume</button>`
-             : `<button class="btn" data-suspend="${esc(name)}">suspend</button>`)
-          : '';
+        const acts = [];
+        if (canMutate() && cfg.enabled) {
+          acts.push(h.suspended
+            ? `<button class="btn" data-resume="${esc(name)}">resume</button>`
+            : `<button class="btn" data-suspend="${esc(name)}">suspend</button>`);
+        }
+        if (isAdminUser()) {
+          acts.push(`<button class="btn" data-toggle-up="${esc(name)}" data-toggle-to="${cfg.enabled ? 'false' : 'true'}">${cfg.enabled ? 'disable' : 'enable'}</button>`);
+          acts.push(`<button class="btn" data-edit-up="${esc(name)}">edit</button>`);
+        }
+        const act = acts.join(' ');
         return `<tr><td class="mono">${esc(name)}</td><td>${state}</td>
           <td>${esc(cfg.layout || '')}</td><td class="num">${cfg.priority ?? ''}</td>
           <td class="num">${num(u.fills)}</td><td class="num">${fmt(u.fill_bytes)}</td>
@@ -1514,6 +1527,131 @@ function renderProxyLive(s) {
       try { await post(`api/proxy/upstreams/${encodeURIComponent(btn.dataset.resume)}/resume`); }
       catch (e) { alert(e.message); }
     }));
+  live.querySelectorAll('[data-toggle-up]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      try {
+        await post(`api/admin/config/upstreams/${encodeURIComponent(btn.dataset.toggleUp)}/enabled`,
+                   {enabled: btn.dataset.toggleTo === 'true'});
+        forceProxyRefresh(); refreshCfgLog();
+      } catch (e) { alert(e.message); }
+    }));
+  live.querySelectorAll('[data-edit-up]').forEach(btn =>
+    btn.addEventListener('click', () => openUpstreamEditor(btn.dataset.editUp)));
+}
+
+async function forceProxyRefresh() {
+  try {
+    const s = await api('api/proxy/stats');
+    proxyStats = s;
+    if (s.enabled) renderProxyLive(s);
+  } catch (e) { /* next poll retries */ }
+}
+
+/* ---------- structured upstream editor (admin role) ---------- */
+function upstreamFormHtml(u, isNew) {
+  const chk = (id, label, on, title) => `<label style="margin-right:14px" title="${esc(title || '')}">
+    <input type="checkbox" id="${id}" ${on ? 'checked' : ''}> ${label}</label>`;
+  const has = (arr, v) => (arr || []).includes(v);
+  return `<div style="border:1px solid var(--line,#30363d);border-radius:8px;padding:14px 16px;margin:10px 0">
+    <h3 style="margin-top:0">${isNew ? 'Add upstream' : `Edit upstream “${esc(u.name)}”`}</h3>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;max-width:720px">
+      <span class="muted">name</span>
+      <span><input type="text" id="upName" value="${esc(u.name || '')}" placeholder="microsoft"></span>
+      <span class="muted">base URL</span>
+      <span><input type="text" id="upBase" value="${esc(u.base_url || '')}" placeholder="https://msdl.microsoft.com/download/symbols" style="width:100%;max-width:560px"></span>
+      <span class="muted">layout</span>
+      <span><select id="upLayout">
+        <option value="symstore" ${u.layout !== 'debuginfod' ? 'selected' : ''}>symstore</option>
+        <option value="debuginfod" ${u.layout === 'debuginfod' ? 'selected' : ''}>debuginfod</option>
+      </select></span>
+      <span class="muted" title="binary families this server hosts">formats</span>
+      <span>${chk('upFmtPe', 'pe', has(u.binformat, 'pe') || !u.binformat?.length)}
+            ${chk('upFmtElf', 'elf', has(u.binformat, 'elf'))}
+            ${chk('upFmtMacho', 'macho', has(u.binformat, 'macho'))}</span>
+      <span class="muted" title="artifact roles this server hosts">provides</span>
+      <span>${chk('upProvImage', 'image', !u.provides?.length || has(u.provides, 'image'))}
+            ${chk('upProvDebug', 'debug', !u.provides?.length || has(u.provides, 'debug'))}</span>
+      <span class="muted" title="optional symstore-only narrowing; empty = all extensions">extensions</span>
+      <span><input type="text" id="upExt" value="${esc((u.extensions || []).join(', '))}" placeholder=".pdb, .dll, .exe (empty = all)"></span>
+      <span class="muted" title="fan-out tier; lower launches earlier">priority</span>
+      <span><input type="text" id="upPriority" value="${u.priority ?? 10}" style="width:70px"></span>
+      <span class="muted" title="per-upstream negative-TTL ladder; empty = global default">negative TTLs</span>
+      <span><input type="text" id="upNegTtl" value="${esc((u.negative_ttl || []).join(', '))}" placeholder="1h, 8h, 7d (empty = global default)"></span>
+      <span class="muted">flags</span>
+      <span>${chk('upEnabled', 'enabled', u.enabled !== false)}
+            ${chk('upNocache', 'nocache', !!u.nocache, 'never cache; always query live')}
+            ${chk('upReqSum', 'requires SymbolChecksum', !!u.requires_symbolchecksum, 'send SymbolChecksum: invalid when the client omits it')}</span>
+    </div>
+    <p style="margin-bottom:0">
+      <button class="btn" id="upSaveBtn">${isNew ? 'Add' : 'Save'} &amp; reload</button>
+      <button class="btn" id="upCancelBtn">Cancel</button>
+      ${isNew ? '' : `<button class="btn" id="upDeleteBtn" style="float:right">Remove upstream</button>`}
+    </p>
+    <div id="upEditorOut"></div>
+  </div>`;
+}
+
+async function openUpstreamEditor(name) {
+  const box = $('#upEditor');
+  if (!box) return;
+  let u = {};
+  if (name) {
+    try {
+      const d = await api('api/admin/config/upstreams');
+      u = (d.upstreams || []).find(x => x.name === name);
+      if (!u) { alert(`upstream "${name}" not found in upstreams.toml`); return; }
+    } catch (e) { alert(e.message); return; }
+  }
+  box.hidden = false;
+  box.innerHTML = upstreamFormHtml(u, !name);
+  box.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  const listOf = v => v.split(',').map(x => x.trim()).filter(Boolean);
+  $('#upCancelBtn').addEventListener('click', () => { box.hidden = true; box.innerHTML = ''; });
+  $('#upSaveBtn').addEventListener('click', async () => {
+    const body = {
+      name: $('#upName').value.trim(),
+      base_url: $('#upBase').value.trim(),
+      layout: $('#upLayout').value,
+      binformat: [['upFmtPe','pe'],['upFmtElf','elf'],['upFmtMacho','macho']]
+        .filter(([id]) => $('#'+id).checked).map(([,v]) => v),
+      provides: [['upProvImage','image'],['upProvDebug','debug']]
+        .filter(([id]) => $('#'+id).checked).map(([,v]) => v),
+      extensions: listOf($('#upExt').value),
+      priority: parseInt($('#upPriority').value, 10) || 10,
+      enabled: $('#upEnabled').checked,
+      nocache: $('#upNocache').checked,
+      requires_symbolchecksum: $('#upReqSum').checked,
+      negative_ttl: listOf($('#upNegTtl').value),
+    };
+    if (!body.name || !body.base_url) {
+      $('#upEditorOut').innerHTML = '<div class="banner err">name and base URL are required</div>';
+      return;
+    }
+    if (!body.binformat.length) {
+      $('#upEditorOut').innerHTML = '<div class="banner err">select at least one format</div>';
+      return;
+    }
+    try {
+      const r = name
+        ? await post(`api/admin/config/upstreams/${encodeURIComponent(name)}`, body)
+        : await post('api/admin/config/upstreams', body);
+      box.hidden = true; box.innerHTML = '';
+      if (!proxyStats?.enabled) loadProxy(); else { forceProxyRefresh(); refreshCfgLog(); }
+    } catch (e) {
+      $('#upEditorOut').innerHTML = `<div class="banner err">${esc(e.message)}</div>`;
+    }
+  });
+  $('#upDeleteBtn')?.addEventListener('click', async () => {
+    if (!confirm(`Remove upstream "${name}" from upstreams.toml? (its cache entries stay; history keeps the config)`)) return;
+    try {
+      await api(`api/admin/config/upstreams/${encodeURIComponent(name)}`, {method: 'DELETE'});
+      box.hidden = true; box.innerHTML = '';
+      forceProxyRefresh(); refreshCfgLog();
+      if (!proxyStats?.enabled) loadProxy();
+    } catch (e) {
+      $('#upEditorOut').innerHTML = `<div class="banner err">${esc(e.message)}</div>`;
+    }
+  });
 }
 
 function renderProxyEntries(d) {

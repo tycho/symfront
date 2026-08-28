@@ -424,29 +424,42 @@ pub(crate) async fn config_put_file(
     ctx: Option<axum::Extension<AuthCtx>>,
     Json(req): Json<PutFileRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let dir = config_dir_of(&state)?;
     if !EDITABLE.contains(&name.as_str()) {
         return Err(ApiError(
             StatusCode::NOT_FOUND,
             "unknown config file".into(),
         ));
     }
-    validate_config(&name, &req.content)
-        .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{name}: {e}")))?;
-    let store = config_store_of(&state)?;
+    let message = format!("edit {name} via web UI");
+    save_validated(&state, &name, req.content, &ctx, &message).await
+}
+
+/// Validate `content` as `file`, commit any manual drift first, write,
+/// commit as the requesting user, and hot-reload the proxy.
+async fn save_validated(
+    state: &App,
+    file: &str,
+    content: String,
+    ctx: &Option<axum::Extension<AuthCtx>>,
+    message: &str,
+) -> ApiResult<Json<serde_json::Value>> {
+    let dir = config_dir_of(state)?;
+    validate_config(file, &content)
+        .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{file}: {e}")))?;
+    let store = config_store_of(state)?;
     // Manual edits made since the last commit become their own commit first,
     // so this save can never silently absorb them.
     store
         .commit_drift()
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
-    std::fs::write(dir.join(&name), &req.content)
+    std::fs::write(dir.join(file), &content)
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let author = ctx
         .as_ref()
         .map(|c| c.user.name.clone())
         .unwrap_or_else(|| "symfront".into());
     let commit = store
-        .commit_all(&author, &format!("edit {name} via web UI"))
+        .commit_all(&author, message)
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
     let proxy = Arc::clone(&state.proxy);
     let summary = tokio::task::spawn_blocking(move || crate::pipeline::reload(&proxy))
@@ -456,4 +469,376 @@ pub(crate) async fn config_put_file(
     Ok(Json(
         json!({ "ok": true, "commit": commit, "summary": summary }),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Structured upstream editing (admin-only via /api/admin/config/ paths).
+// toml_edit keeps comments and ordering of hand-written entries intact.
+// ---------------------------------------------------------------------------
+
+fn humanize_secs(secs: u64) -> String {
+    if secs > 0 && secs.is_multiple_of(86400) {
+        format!("{}d", secs / 86400)
+    } else if secs > 0 && secs.is_multiple_of(3600) {
+        format!("{}h", secs / 3600)
+    } else if secs > 0 && secs.is_multiple_of(60) {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
+fn upstreams_path(state: &App) -> ApiResult<std::path::PathBuf> {
+    Ok(config_dir_of(state)?.join(crate::config::UPSTREAMS_TOML))
+}
+
+/// Full structured upstream list, straight from upstreams.toml (works even
+/// when the proxy tier is disabled, e.g. before the first upstream exists).
+pub(crate) async fn upstreams_list(State(state): State<App>) -> ApiResult<Json<serde_json::Value>> {
+    let list = symfront_proxy::config::upstreams_from_file(&upstreams_path(&state)?)
+        .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    let mut sort_families: Vec<serde_json::Value> = Vec::new();
+    for u in &list {
+        let mut binformat: Vec<String> = u
+            .binformat
+            .iter()
+            .map(|f| {
+                serde_json::to_value(f)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        binformat.sort();
+        let mut provides: Vec<String> = u
+            .provides
+            .iter()
+            .map(|r| {
+                serde_json::to_value(r)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        provides.sort();
+        let mut extensions: Vec<String> = u
+            .extensions
+            .as_ref()
+            .map(|e| e.iter().cloned().collect())
+            .unwrap_or_default();
+        extensions.sort();
+        sort_families.push(json!({
+            "name": u.name,
+            "base_url": u.base_url,
+            "layout": u.layout.name(),
+            "binformat": binformat,
+            "provides": provides,
+            "extensions": extensions,
+            "priority": u.priority,
+            "enabled": u.enabled,
+            "nocache": u.nocache,
+            "requires_symbolchecksum": u.requires_symbolchecksum,
+            "negative_ttl": u
+                .negative_ttl
+                .as_ref()
+                .map(|l| l.iter().map(|d| humanize_secs(d.as_secs())).collect::<Vec<_>>())
+                .unwrap_or_default(),
+        }));
+    }
+    Ok(Json(json!({ "upstreams": sort_families })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpstreamEdit {
+    name: String,
+    base_url: String,
+    #[serde(default)]
+    layout: Option<String>,
+    #[serde(default)]
+    binformat: Vec<String>,
+    #[serde(default)]
+    provides: Vec<String>,
+    #[serde(default)]
+    extensions: Vec<String>,
+    #[serde(default)]
+    priority: Option<i32>,
+    #[serde(default = "default_enabled")]
+    enabled: bool,
+    #[serde(default)]
+    nocache: bool,
+    #[serde(default)]
+    requires_symbolchecksum: bool,
+    #[serde(default)]
+    negative_ttl: Vec<String>,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+fn str_array(items: &[String]) -> toml_edit::Value {
+    let mut arr = toml_edit::Array::new();
+    for i in items {
+        arr.push(i.as_str());
+    }
+    arr.into()
+}
+
+/// Write the edit into a TOML table, dropping keys at their default values
+/// so hand-maintained files stay tidy. Existing comments on kept keys and
+/// on the table itself survive.
+fn apply_edit(t: &mut toml_edit::Table, e: &UpstreamEdit) {
+    let mut set = |key: &str, item: Option<toml_edit::Value>| match item {
+        Some(v) => {
+            t[key] = toml_edit::Item::Value(v);
+        }
+        None => {
+            t.remove(key);
+        }
+    };
+    set("name", Some(e.name.as_str().into()));
+    let layout = e.layout.as_deref().unwrap_or("symstore");
+    set("layout", (layout != "symstore").then(|| layout.into()));
+    let mut binformat = e.binformat.clone();
+    binformat.sort();
+    set(
+        "binformat",
+        (!binformat.is_empty() && binformat != ["pe"]).then(|| str_array(&binformat)),
+    );
+    let mut provides = e.provides.clone();
+    provides.sort();
+    set(
+        "provides",
+        (!provides.is_empty() && provides != ["debug", "image"]).then(|| str_array(&provides)),
+    );
+    set("base_url", Some(e.base_url.as_str().into()));
+    set(
+        "extensions",
+        (!e.extensions.is_empty()).then(|| str_array(&e.extensions)),
+    );
+    set(
+        "priority",
+        e.priority.filter(|p| *p != 10).map(|p| (p as i64).into()),
+    );
+    set("enabled", (!e.enabled).then(|| false.into()));
+    set("nocache", e.nocache.then(|| true.into()));
+    set(
+        "requires_symbolchecksum",
+        e.requires_symbolchecksum.then(|| true.into()),
+    );
+    set(
+        "negative_ttl",
+        (!e.negative_ttl.is_empty()).then(|| str_array(&e.negative_ttl)),
+    );
+}
+
+fn load_upstreams_doc(state: &App) -> ApiResult<toml_edit::DocumentMut> {
+    let path = upstreams_path(state)?;
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    text.parse()
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")))
+}
+
+fn upstream_tables(doc: &mut toml_edit::DocumentMut) -> ApiResult<&mut toml_edit::ArrayOfTables> {
+    doc.entry("upstream")
+        .or_insert(toml_edit::Item::ArrayOfTables(Default::default()))
+        .as_array_of_tables_mut()
+        .ok_or_else(|| {
+            ApiError(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "upstreams.toml: 'upstream' is not an array of tables".into(),
+            )
+        })
+}
+
+pub(crate) async fn upstream_add(
+    State(state): State<App>,
+    ctx: Option<axum::Extension<AuthCtx>>,
+    Json(edit): Json<UpstreamEdit>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut doc = load_upstreams_doc(&state)?;
+    let tables = upstream_tables(&mut doc)?;
+    let mut t = toml_edit::Table::new();
+    apply_edit(&mut t, &edit);
+    tables.push(t);
+    let message = format!("add upstream {} via web UI", edit.name);
+    save_validated(
+        &state,
+        crate::config::UPSTREAMS_TOML,
+        doc.to_string(),
+        &ctx,
+        &message,
+    )
+    .await
+}
+
+pub(crate) async fn upstream_update(
+    State(state): State<App>,
+    AxPath(name): AxPath<String>,
+    ctx: Option<axum::Extension<AuthCtx>>,
+    Json(edit): Json<UpstreamEdit>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut doc = load_upstreams_doc(&state)?;
+    let tables = upstream_tables(&mut doc)?;
+    let table = tables
+        .iter_mut()
+        .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("no upstream named {name:?}")))?;
+    apply_edit(table, &edit);
+    let message = if edit.name == name {
+        format!("edit upstream {name} via web UI")
+    } else {
+        format!("rename upstream {name} -> {} via web UI", edit.name)
+    };
+    save_validated(
+        &state,
+        crate::config::UPSTREAMS_TOML,
+        doc.to_string(),
+        &ctx,
+        &message,
+    )
+    .await
+}
+
+pub(crate) async fn upstream_delete(
+    State(state): State<App>,
+    AxPath(name): AxPath<String>,
+    ctx: Option<axum::Extension<AuthCtx>>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut doc = load_upstreams_doc(&state)?;
+    let tables = upstream_tables(&mut doc)?;
+    let before = tables.len();
+    tables.retain(|t| t.get("name").and_then(|v| v.as_str()) != Some(name.as_str()));
+    if tables.len() == before {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            format!("no upstream named {name:?}"),
+        ));
+    }
+    let message = format!("remove upstream {name} via web UI");
+    save_validated(
+        &state,
+        crate::config::UPSTREAMS_TOML,
+        doc.to_string(),
+        &ctx,
+        &message,
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+pub(crate) struct EnabledRequest {
+    enabled: bool,
+}
+
+/// Quick enable/disable toggle: flips only the `enabled` key, leaving the
+/// rest of the hand-written entry (and its comments) untouched.
+pub(crate) async fn upstream_set_enabled(
+    State(state): State<App>,
+    AxPath(name): AxPath<String>,
+    ctx: Option<axum::Extension<AuthCtx>>,
+    Json(req): Json<EnabledRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut doc = load_upstreams_doc(&state)?;
+    let tables = upstream_tables(&mut doc)?;
+    let table = tables
+        .iter_mut()
+        .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("no upstream named {name:?}")))?;
+    if req.enabled {
+        table.remove("enabled"); // true is the default
+    } else {
+        table["enabled"] = toml_edit::value(false);
+    }
+    let message = format!(
+        "{} upstream {name} via web UI",
+        if req.enabled { "enable" } else { "disable" }
+    );
+    save_validated(
+        &state,
+        crate::config::UPSTREAMS_TOML,
+        doc.to_string(),
+        &ctx,
+        &message,
+    )
+    .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn edit(name: &str) -> UpstreamEdit {
+        UpstreamEdit {
+            name: name.into(),
+            base_url: "https://example.com/sym".into(),
+            layout: None,
+            binformat: vec!["pe".into()],
+            provides: vec!["image".into(), "debug".into()],
+            extensions: vec![],
+            priority: Some(10),
+            enabled: true,
+            nocache: false,
+            requires_symbolchecksum: false,
+            negative_ttl: vec![],
+        }
+    }
+
+    #[test]
+    fn apply_edit_drops_defaults() {
+        let mut t = toml_edit::Table::new();
+        apply_edit(&mut t, &edit("u"));
+        let text = t.to_string();
+        assert!(text.contains("name = \"u\""));
+        assert!(text.contains("base_url"));
+        for absent in [
+            "layout",
+            "binformat",
+            "provides",
+            "priority",
+            "enabled",
+            "nocache",
+        ] {
+            assert!(
+                !text.contains(absent),
+                "{absent} should be omitted at default: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_edit_writes_non_defaults_and_reverts() {
+        let mut t = toml_edit::Table::new();
+        let mut e = edit("u");
+        e.layout = Some("debuginfod".into());
+        e.binformat = vec!["elf".into()];
+        e.priority = Some(5);
+        e.enabled = false;
+        e.negative_ttl = vec!["1h".into(), "7d".into()];
+        apply_edit(&mut t, &e);
+        let text = t.to_string();
+        assert!(text.contains("layout = \"debuginfod\""));
+        assert!(text.contains("binformat = [\"elf\"]"));
+        assert!(text.contains("priority = 5"));
+        assert!(text.contains("enabled = false"));
+        assert!(text.contains("negative_ttl = [\"1h\", \"7d\"]"));
+        // Reverting to defaults removes the keys again.
+        apply_edit(&mut t, &edit("u"));
+        let text = t.to_string();
+        for absent in ["layout", "binformat", "priority", "enabled", "negative_ttl"] {
+            assert!(!text.contains(absent), "{absent} should be gone: {text}");
+        }
+    }
+
+    #[test]
+    fn humanize_roundtrips_through_the_parser() {
+        for (secs, want) in [(3600, "1h"), (7 * 86400, "7d"), (90, "90s"), (300, "5m")] {
+            let h = humanize_secs(secs);
+            assert_eq!(h, want);
+            let parsed = symfront_proxy::config::parse_duration(&h).unwrap();
+            assert_eq!(parsed.as_secs(), secs);
+        }
+    }
 }
