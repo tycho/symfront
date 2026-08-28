@@ -1,0 +1,62 @@
+# Example nginx vhost for symfront (adapted from the live ntsymbols.conf).
+# For the parallel-run phase, use this shape on the symbols-beta vhost
+# pointing at symfront's socket; at cutover, move symbols.* over and retire
+# the symbols-private autoindex vhost (tier 0 serves the store, without
+# leaking directory listings or transaction history).
+
+upstream symfront {
+	server unix:/run/symfront/http.sock;
+	keepalive 64;
+	keepalive_timeout 60s;
+}
+
+server {
+	include extra/listen-http.conf;
+	include extra/listen-https.conf;
+
+	server_name symbols-beta.lan.internal symbols-beta.uplinklabs.net;
+
+	access_log /var/log/nginx/symfront-access.log cachelog buffer=256k flush=10s;
+	error_log /var/log/nginx/symfront-error.log;
+
+	# Compression note (proxy-integration plan §3.7): symfront negotiates
+	# zstd/gzip itself for tier-0 and standalone-mode cache hits, and never
+	# recompresses CAB-packed (*_) payloads. If nginx-side gzip is kept for
+	# the X-Accel path, prefer a location-based split over `gzip_types *`
+	# so CAB payloads aren't recompressed:
+	gzip on;
+	gzip_proxied any;
+	gzip_types application/octet-stream;
+	gzip_min_length 4096;
+	gzip_vary on;
+	# CAB-packed payloads end in '_': serving location below disables gzip
+	# for them via the map:
+	#   map $uri $no_gzip { default 0; "~_\z" 1; }
+	# (or leave mode = "standalone" in proxy.toml and drop nginx gzip here.)
+
+	# X-Accel offload target for proxy cache hits (mode = "nginx").
+	location ^~ /_symfront_cache/ {
+		internal;
+		alias /srv/cache/symfront/data/;
+		sendfile off; # so gzip applies
+		aio threads;
+		tcp_nopush on;
+		etag off;
+		add_header ETag $upstream_http_etag;
+		add_header Last-Modified $upstream_http_last_modified;
+		types { } default_type application/octet-stream;
+	}
+
+	location / {
+		client_max_body_size 4g;
+		proxy_redirect off;
+		proxy_buffering off;
+		proxy_request_buffering off;
+		proxy_http_version 1.1;
+		proxy_pass_request_headers on;
+		proxy_set_header Host $http_host;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto $x_forwarded_proto;
+		proxy_pass http://symfront;
+	}
+}

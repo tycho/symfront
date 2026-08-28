@@ -1,0 +1,47 @@
+# Caching-proxy settings (translated from symsrv's main.toml).
+
+[cache]
+# New cache root — separate from the store AND from the Python cache at
+# /srv/cache/ntsymbols/data. Populate once with:
+#   symfront proxy import /srv/cache/ntsymbols/data
+# (hardlinks when both live on the same dataset; --copy otherwise)
+path = "/srv/cache/symfront"
+
+# Same budget the Python config declared (it never enforced it; we do).
+# Eviction drops soonest-expiring positive entries at the high watermark.
+size = "512GB"
+#high_watermark = 1.0
+#low_watermark = 0.95
+
+# "nginx" matches the current deployment: cache-hit bodies are offloaded via
+# X-Accel-Redirect (see the vhost's /_symfront_cache internal location).
+# "standalone" serves them ourselves — richer stats (actual wire bytes,
+# per-response compression ratios) at the cost of the offload. Revisit after
+# the parallel-run benchmarks.
+mode = "nginx"
+accel_prefix = "/_symfront_cache"
+
+[ttl]
+# Positive entries: 365d, sliding on every hit (was fixed 365d in symsrv).
+positive = "365d"
+# Negative entries: escalating ladder replacing the old flat per-status TTLs
+# (404 was 7d, 403 was 14d). Fresh Windows-patch symbols that appear on msdl
+# a day late now get re-probed quickly instead of being missing for a week.
+negative = ["1h", "1h", "1h", "8h", "8h", "24h", "7d"]
+
+[health]
+probe_interval = "30s"
+probe_timeout = "15s"
+
+[fanout]
+# Priority tiers launch this far apart (first 200 still wins globally).
+stagger = "100ms"
+connect_timeout = "5s"
+read_timeout = "20s"
+
+[compression]
+# zstd offered first, gzip fallback (zlib-rs backend); never recompresses
+# CAB-packed (*_) payloads; floor matches the old nginx gzip_min_length.
+min_size = 4096
+gzip_level = 6
+zstd_level = 3

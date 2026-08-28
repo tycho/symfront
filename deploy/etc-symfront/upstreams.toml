@@ -1,0 +1,154 @@
+# Upstream symbol servers (translated from symsrv's upstreams.toml).
+#
+# Changes from the Python config:
+# - The "internal" nocache upstream is gone: the managed store is tier 0 of
+#   the serving pipeline now, consulted before any of these.
+# - Entries that were commented out are preserved with `enabled = false`
+#   so they stay visible in the admin UI and can be flipped on there.
+#
+# Axes: layout ("symstore"/"debuginfod"), binformat (pe/elf/macho),
+# provides (image/debug), extensions (symstore-only narrowing). A request
+# goes to an upstream only if ALL declared axes admit it. Other keys:
+# priority (lower = earlier fan-out tier), nocache, requires_symbolchecksum,
+# negative_ttl (per-upstream ladder override), enabled.
+
+[[upstream]]
+name = "microsoft"
+layout = "symstore"
+binformat = ["pe"]
+base_url = "http://msdl.microsoft.com/download/symbols"
+# msdl is the main beneficiary of the escalating negative ladder: symbols
+# for fresh Windows patches often appear a day or two late.
+
+[[upstream]]
+name = "nuget"
+layout = "symstore"
+binformat = ["pe"]
+base_url = "https://symbols.nuget.org/download/symbols"
+requires_symbolchecksum = true
+
+[[upstream]]
+name = "nvidia"
+layout = "symstore"
+binformat = ["pe"]
+provides = ["image"]
+base_url = "https://driver-symbols.nvidia.com"
+
+[[upstream]]
+name = "amd"
+layout = "symstore"
+binformat = ["pe"]
+provides = ["image"]
+base_url = "https://download.amd.com/dir/bin"
+
+[[upstream]]
+name = "intel"
+layout = "symstore"
+binformat = ["pe"]
+provides = ["image"]
+base_url = "https://software.intel.com/sites/downloads/symbols"
+
+[[upstream]]
+name = "mozilla"
+layout = "symstore"
+binformat = ["pe"]
+extensions = [".pdb", ".dll", ".exe"]
+base_url = "https://symbols.mozilla.org"
+
+[[upstream]]
+name = "chrome"
+layout = "symstore"
+binformat = ["pe"]
+extensions = [".pdb", ".dll", ".exe"]
+base_url = "https://chromium-browser-symsrv.commondatastorage.googleapis.com"
+
+[[upstream]]
+name = "renderdoc"
+layout = "symstore"
+binformat = ["pe"]
+extensions = [".pdb", ".dll", ".exe"]
+base_url = "https://renderdoc.org/symbols"
+
+[[upstream]]
+name = "unity"
+layout = "symstore"
+binformat = ["pe"]
+extensions = [".pdb", ".dll", ".exe"]
+base_url = "http://symbolserver.unity3d.com"
+
+# --- debuginfod upstreams (ELF) -------------------------------------------
+# SymbolStore-layout ELF requests carrying a full GNU build-id
+# (elf-buildid[-sym]-<hex>) are translated into buildid/<id>/... queries;
+# native /buildid/... requests converge on the same cache entries.
+
+[[upstream]]
+name = "archlinux"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.archlinux.org"
+
+[[upstream]]
+name = "ubuntu"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.ubuntu.com"
+enabled = false
+
+[[upstream]]
+name = "fedora"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.fedoraproject.org"
+enabled = false
+
+[[upstream]]
+name = "debian"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.debian.net"
+enabled = false
+
+[[upstream]]
+name = "cachyos"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.cachyos.org"
+
+[[upstream]]
+name = "centos"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.centos.org"
+enabled = false
+
+[[upstream]]
+name = "voidlinux"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.s.voidlinux.org"
+enabled = false
+
+[[upstream]]
+name = "opensuse"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.opensuse.org"
+enabled = false
+
+[[upstream]]
+name = "steamos"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.steamos.cloud"
+
+[[upstream]]
+name = "elfutils"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "https://debuginfod.elfutils.org"
+
+[[upstream]]
+name = "uplinklabs-arch"
+layout = "debuginfod"
+binformat = ["elf"]
+base_url = "http://192.168.32.1:8002"

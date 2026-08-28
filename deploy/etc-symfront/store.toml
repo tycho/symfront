@@ -1,0 +1,3 @@
+# The managed symbol store (tier 0 of the serving pipeline).
+
+path = "/srv/symstore"

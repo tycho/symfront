@@ -1,0 +1,18 @@
+# symfront server configuration (production).
+# CLI flags override anything set here.
+
+# Listen on a Unix socket behind nginx (lower overhead than TCP loopback).
+# For the parallel-run phase, point the symbols-beta vhost at this socket.
+uds = "/run/symfront/http.sock"
+
+# nginx is the one trusted hop in front of us.
+trusted_proxies = 1
+
+# Enable authentication for the admin UI. Create the first user with:
+#   symfront user --auth-db /var/lib/symfront/auth.db add <name> --role admin
+auth_db = "/var/lib/symfront/auth.db"
+
+# Passkeys need the public HTTPS origin.
+#webauthn_origin = "https://symbols.uplinklabs.net"
+
+log_filter = "symfront=info"

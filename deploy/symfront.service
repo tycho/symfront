@@ -1,0 +1,27 @@
+# Example systemd unit for the combined symfront server.
+# For a second isolated instance (e.g. a pure cache node), copy this unit
+# and add --proxy-only plus a different socket in its own config tree.
+
+[Unit]
+Description=symfront symbol server (store + caching proxy + admin UI)
+After=network.target
+
+[Service]
+Type=simple
+User=symfront
+Group=symfront
+ExecStart=/usr/local/bin/symfront --config-dir /etc/symfront serve
+ExecReload=/bin/kill -HUP $MAINPID
+RuntimeDirectory=symfront
+Restart=on-failure
+RestartSec=2
+
+# The store, the cache, and the auth db are the only writable paths.
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/symstore /srv/cache/symfront /var/lib/symfront /etc/symfront
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
