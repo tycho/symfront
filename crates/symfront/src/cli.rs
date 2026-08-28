@@ -490,3 +490,89 @@ pub fn check(store_path: &Path, deep: bool) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Configuration tree
+// ---------------------------------------------------------------------------
+
+pub fn config_init(dir: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    // Open (and possibly create) the history repo before writing the starter
+    // files, so pre-existing content is captured as its own commit and the
+    // starter files land as a distinct, user-attributed one.
+    let store = crate::config_store::ConfigStore::open(dir)?;
+    let mut written = 0;
+    for (name, contents) in crate::config::STARTER_FILES {
+        let path = dir.join(name);
+        if path.exists() {
+            println!("kept     {}", path.display());
+            continue;
+        }
+        std::fs::write(&path, contents).with_context(|| format!("writing {}", path.display()))?;
+        println!("created  {}", path.display());
+        written += 1;
+    }
+    if written > 0 && store.is_dirty()? {
+        store.commit_all(&whoami(), "symfront config init")?;
+    }
+    println!("config tree ready in {} (history: git repo inside)", dir.display());
+    Ok(())
+}
+
+fn whoami() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "symfront".into())
+}
+
+fn open_config_store(dir: &Path) -> anyhow::Result<crate::config_store::ConfigStore> {
+    if !dir.is_dir() {
+        bail!(
+            "no config tree at {} (create one with `symfront config init`)",
+            dir.display()
+        );
+    }
+    crate::config_store::ConfigStore::open(dir)
+}
+
+pub fn config_log(dir: &Path, limit: usize) -> anyhow::Result<()> {
+    let store = open_config_store(dir)?;
+    let entries = store.log(limit)?;
+    if entries.is_empty() {
+        println!("no config history yet");
+        return Ok(());
+    }
+    for e in entries {
+        let when = chrono_fmt(e.time);
+        println!("{}  {}  {:<12} {}", e.short_id, when, e.author, e.message);
+    }
+    if store.is_dirty()? {
+        println!("\nuncommitted manual edits present (committed automatically on next reload)");
+    }
+    Ok(())
+}
+
+fn chrono_fmt(unix: i64) -> String {
+    // Local-enough: render as UTC to avoid a tz dependency here.
+    let dt = std::time::UNIX_EPOCH + std::time::Duration::from_secs(unix.max(0) as u64);
+    httpdate::fmt_http_date(dt)
+}
+
+pub fn config_diff(dir: &Path, from: Option<&str>, to: Option<&str>) -> anyhow::Result<()> {
+    let store = open_config_store(dir)?;
+    let text = store.diff(from, to)?;
+    if text.is_empty() {
+        println!("no differences");
+    } else {
+        print!("{text}");
+    }
+    Ok(())
+}
+
+pub fn config_rollback(dir: &Path, rev: &str) -> anyhow::Result<()> {
+    let store = open_config_store(dir)?;
+    let id = store.rollback(&whoami(), rev)?;
+    println!("rolled back to {rev}; recorded as {}", &id[..10]);
+    println!("note: a running server picks this up on its next config reload");
+    Ok(())
+}

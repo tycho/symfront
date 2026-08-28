@@ -8,6 +8,7 @@ license.workspace = true
 symfront-ident = { path = "../symfront-ident" }
 symfront-store = { path = "../symfront-store" }
 anyhow = "1"
+git2 = { version = "0.20", default-features = false }
 argon2 = "0.5"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 httpdate = "1"
@@ -28,6 +29,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "tim
 tokio-stream = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

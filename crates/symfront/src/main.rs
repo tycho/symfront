@@ -1,6 +1,8 @@
 mod auth;
 mod cli;
 mod cli_auth;
+mod config;
+mod config_store;
 mod remote;
 mod symbols;
 mod totp;
@@ -15,9 +17,20 @@ use symfront_store::TransactionId;
 #[derive(Parser)]
 #[command(name = "symfront", version, about)]
 struct Args {
-    /// Path to the symbol store root (local mode).
-    #[arg(long, global = true, env = "SYMFRONT_STORE", default_value = "/srv/symstore")]
-    store: std::path::PathBuf,
+    /// Configuration tree directory (server/store/proxy/upstreams/blacklist
+    /// TOML files). Missing directory = flag-only operation.
+    #[arg(
+        long,
+        global = true,
+        env = "SYMFRONT_CONFIG_DIR",
+        default_value = "/etc/symfront"
+    )]
+    config_dir: std::path::PathBuf,
+
+    /// Path to the symbol store root (local mode). Overrides store.toml;
+    /// defaults to /srv/symstore.
+    #[arg(long, global = true, env = "SYMFRONT_STORE")]
+    store: Option<std::path::PathBuf>,
 
     /// symfront server URL — switches supported commands to remote mode
     /// (status, search, tx list/show/del, upload).
@@ -37,9 +50,15 @@ struct Args {
 enum Command {
     /// Run the web UI / HTTP API server.
     Serve {
-        /// Address to listen on.
-        #[arg(long, default_value = "127.0.0.1:8710")]
-        listen: String,
+        /// TCP address to listen on. Overrides server.toml; defaults to
+        /// 127.0.0.1:8710.
+        #[arg(long)]
+        listen: Option<String>,
+        /// Unix domain socket to listen on instead of TCP (Unix only).
+        /// Overrides server.toml.
+        #[cfg_attr(unix, arg(long))]
+        #[cfg_attr(not(unix), arg(long, hide = true))]
+        uds: Option<std::path::PathBuf>,
         /// SQLite auth database; enables authentication. Manage users with
         /// `symfront user` / `symfront token`. Without this the server is open.
         #[arg(long, env = "SYMFRONT_AUTH_DB")]
@@ -52,8 +71,8 @@ enum Command {
         /// Number of trusted reverse-proxy hops. When > 0, the client IP for
         /// audit logs is taken from X-Forwarded-For (capped at this depth)
         /// and X-Forwarded-Proto: https marks session cookies Secure.
-        #[arg(long, default_value_t = 0, env = "SYMFRONT_TRUSTED_PROXIES")]
-        trusted_proxies: usize,
+        #[arg(long, env = "SYMFRONT_TRUSTED_PROXIES")]
+        trusted_proxies: Option<usize>,
         /// Serve the store read-only (no browsing) at /symbols/ for
         /// dbghelp/symsrv HTTP clients. Always unauthenticated.
         #[arg(long)]
@@ -120,6 +139,11 @@ enum Command {
         #[arg(long)]
         deep: bool,
     },
+    /// Inspect and manage the configuration tree (git-backed history).
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
     /// Manage users in the auth database.
     User {
         /// SQLite auth database (created on first use).
@@ -136,6 +160,26 @@ enum Command {
         #[command(subcommand)]
         command: cli_auth::TokenCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum ConfigCommand {
+    /// Create the config directory with a commented starter tree (files that
+    /// already exist are left untouched) and initialize its history repo.
+    Init,
+    /// Show the config change history.
+    Log {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Show a diff: no args = uncommitted changes vs HEAD; one rev = that
+    /// commit vs the working tree; two revs = between commits.
+    Diff {
+        from: Option<String>,
+        to: Option<String>,
+    },
+    /// Restore the tree to an earlier commit (recorded as a new commit).
+    Rollback { rev: String },
 }
 
 #[derive(Subcommand)]
@@ -164,14 +208,23 @@ enum TxCommand {
 }
 
 fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    // The config tree is optional; flags override anything it says.
+    let cfg = config::ConfigTree::load(&args.config_dir)?;
+
+    // Log filter precedence: RUST_LOG > server.toml log_filter > default.
+    let default_filter = cfg
+        .server
+        .log_filter
+        .clone()
+        .unwrap_or_else(|| "symfront=info,tower_http=info".into());
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "symfront=info,tower_http=info".into()),
+                .unwrap_or_else(|_| default_filter.into()),
         )
         .init();
-
-    let args = Args::parse();
 
     // Remote mode: --server routes supported commands through the HTTP API.
     if let Some(server) = &args.server {
@@ -212,6 +265,13 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    // Store path precedence: --store > store.toml > /srv/symstore.
+    let store = args
+        .store
+        .clone()
+        .or_else(|| cfg.store.path.clone())
+        .unwrap_or_else(|| "/srv/symstore".into());
+
     match args.command {
         Command::Login | Command::Logout => {
             anyhow::bail!("login/logout need --server (or SYMFRONT_SERVER)")
@@ -223,33 +283,48 @@ fn main() -> anyhow::Result<()> {
             comment,
             dry_run,
             jobs: _,
-        } => cli::upload(&args.store, &paths, &product, &version, &comment, dry_run),
+        } => cli::upload(&store, &paths, &product, &version, &comment, dry_run),
         Command::Serve {
             listen,
+            uds,
             auth_db,
             webauthn_origin,
             trusted_proxies,
             serve_symbols,
             upstream,
-        } => web::serve(
-            args.store,
-            listen,
-            auth_db,
-            webauthn_origin,
-            trusted_proxies,
+        } => web::serve(web::ServeOptions {
+            store,
+            listen: listen
+                .or_else(|| cfg.server.listen.clone())
+                .unwrap_or_else(|| "127.0.0.1:8710".into()),
+            uds: uds.or_else(|| cfg.server.uds.clone()),
+            auth_db: auth_db.or_else(|| cfg.server.auth_db.clone()),
+            webauthn_origin: webauthn_origin.or_else(|| cfg.server.webauthn_origin.clone()),
+            trusted_proxies: trusted_proxies
+                .or(cfg.server.trusted_proxies)
+                .unwrap_or(0),
             serve_symbols,
-            upstream,
-        ),
-        Command::Init => cli::init(&args.store),
-        Command::Status => cli::status(&args.store),
+            upstreams: upstream,
+            config_dir: cfg.dir.clone(),
+        }),
+        Command::Init => cli::init(&store),
+        Command::Status => cli::status(&store),
         Command::Tx { command } => match command {
-            TxCommand::List { all, sizes } => cli::tx_list(&args.store, all, sizes),
-            TxCommand::Show { id } => cli::tx_show(&args.store, id),
-            TxCommand::Del { id, dry_run, yes } => cli::tx_del(&args.store, id, dry_run, yes),
+            TxCommand::List { all, sizes } => cli::tx_list(&store, all, sizes),
+            TxCommand::Show { id } => cli::tx_show(&store, id),
+            TxCommand::Del { id, dry_run, yes } => cli::tx_del(&store, id, dry_run, yes),
         },
-        Command::Search { query, limit } => cli::search(&args.store, &query, limit),
-        Command::Strays { prune, dry_run } => cli::strays(&args.store, prune, dry_run),
-        Command::Check { deep } => cli::check(&args.store, deep),
+        Command::Search { query, limit } => cli::search(&store, &query, limit),
+        Command::Strays { prune, dry_run } => cli::strays(&store, prune, dry_run),
+        Command::Check { deep } => cli::check(&store, deep),
+        Command::Config { command } => match command {
+            ConfigCommand::Init => cli::config_init(&args.config_dir),
+            ConfigCommand::Log { limit } => cli::config_log(&args.config_dir, limit),
+            ConfigCommand::Diff { from, to } => {
+                cli::config_diff(&args.config_dir, from.as_deref(), to.as_deref())
+            }
+            ConfigCommand::Rollback { rev } => cli::config_rollback(&args.config_dir, &rev),
+        },
         Command::User { auth_db, command } => cli_auth::user(&auth_db, command),
         Command::Token { auth_db, command } => cli_auth::token(&auth_db, command),
     }

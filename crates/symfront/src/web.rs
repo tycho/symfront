@@ -566,16 +566,45 @@ async fn me(State(state): State<App>, headers: HeaderMap) -> Json<serde_json::Va
     }
 }
 
+/// Resolved server options (flags merged over the config tree).
+pub struct ServeOptions {
+    pub store: PathBuf,
+    pub listen: String,
+    pub uds: Option<PathBuf>,
+    pub auth_db: Option<PathBuf>,
+    pub webauthn_origin: Option<String>,
+    pub trusted_proxies: usize,
+    pub serve_symbols: bool,
+    pub upstreams: Vec<String>,
+    /// Present when a config tree exists; enables git-backed history.
+    pub config_dir: Option<PathBuf>,
+}
+
 #[tokio::main]
-pub async fn serve(
-    store_path: PathBuf,
-    listen: String,
-    auth_db: Option<PathBuf>,
-    webauthn_origin: Option<String>,
-    trusted_proxies: usize,
-    serve_symbols: bool,
-    upstreams: Vec<String>,
-) -> anyhow::Result<()> {
+pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
+    let ServeOptions {
+        store: store_path,
+        listen,
+        uds,
+        auth_db,
+        webauthn_origin,
+        trusted_proxies,
+        serve_symbols,
+        upstreams,
+        config_dir,
+    } = opts;
+    // Capture any out-of-band config edits in history before we run with
+    // them; failure is non-fatal (read-only config dir, etc.).
+    if let Some(dir) = &config_dir {
+        match crate::config_store::ConfigStore::open(dir) {
+            Ok(store) => {
+                if let Err(e) = store.commit_drift() {
+                    tracing::warn!("config drift commit failed: {e:#}");
+                }
+            }
+            Err(e) => tracing::warn!("config history unavailable: {e:#}"),
+        }
+    }
     let auth = match &auth_db {
         Some(path) => {
             let db = AuthDb::open(path)?;
@@ -728,29 +757,57 @@ pub async fn serve(
         ))
         .with_state(Arc::clone(&state));
 
+    let shutdown_state = Arc::clone(&state);
+    let shutdown = async move {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutting down (Ctrl-C again to force)");
+        // Flip the flag so SSE streams end at their next tick; otherwise
+        // graceful shutdown would wait on them forever.
+        shutdown_state.shutdown.store(true, Ordering::Relaxed);
+        tokio::spawn(async {
+            let _ = tokio::signal::ctrl_c().await;
+            tracing::warn!("forcing exit");
+            std::process::exit(130);
+        });
+    };
+    #[cfg(unix)]
+    if let Some(sock) = &uds {
+        // Behind a local reverse proxy: no TCP peer, so the client IP comes
+        // from X-Forwarded-For (with trusted_proxies > 0) or is "unknown".
+        match std::fs::remove_file(sock) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => anyhow::bail!("removing stale socket {}: {e}", sock.display()),
+        }
+        if let Some(parent) = sock.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let listener = tokio::net::UnixListener::bind(sock)?;
+        tracing::info!("listening on unix:{}", sock.display());
+        axum::serve(listener, app.into_make_service())
+            .with_graceful_shutdown(shutdown)
+            .await?;
+        return finish_shutdown(&state).await;
+    }
+    #[cfg(not(unix))]
+    if uds.is_some() {
+        anyhow::bail!("--uds is only supported on Unix; use --listen");
+    }
     let addr: SocketAddr = listen.parse()?;
     tracing::info!("listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    let shutdown_state = Arc::clone(&state);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-        .with_graceful_shutdown(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            tracing::info!("shutting down (Ctrl-C again to force)");
-            // Flip the flag so SSE streams end at their next tick; otherwise
-            // graceful shutdown would wait on them forever.
-            shutdown_state.shutdown.store(true, Ordering::Relaxed);
-            tokio::spawn(async {
-                let _ = tokio::signal::ctrl_c().await;
-                tracing::warn!("forcing exit");
-                std::process::exit(130);
-            });
-        })
+        .with_graceful_shutdown(shutdown)
         .await?;
-    // Let any in-flight mutation finish rather than dying mid-delete
-    // (the journal would make it recoverable, but clean is better).
+    finish_shutdown(&state).await
+}
+
+/// Let any in-flight mutation finish rather than dying mid-delete
+/// (the journal would make it recoverable, but clean is better).
+async fn finish_shutdown(state: &App) -> anyhow::Result<()> {
     loop {
         let running = state
             .jobs
