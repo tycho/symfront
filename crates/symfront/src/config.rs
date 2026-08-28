@@ -31,6 +31,10 @@ pub struct ServerConfig {
     pub listen: Option<String>,
     /// Unix domain socket path; takes precedence over `listen` (Unix only).
     pub uds: Option<PathBuf>,
+    /// Socket file mode, octal (e.g. "0666"); default = whatever the
+    /// process umask yields. Needed when the fronting proxy runs as a
+    /// different user.
+    pub uds_mode: Option<String>,
     /// Trusted reverse-proxy hop count for X-Forwarded-For / -Proto.
     pub trusted_proxies: Option<usize>,
     /// SQLite auth database; enables authentication.
@@ -96,6 +100,10 @@ listen = "127.0.0.1:8710"
 # Unix domain socket (takes precedence over `listen`; Unix only). Lower
 # overhead when nginx proxies to us on the same host.
 #uds = "/run/symfront/symfront.sock"
+
+# Socket file mode (octal). The default is umask-derived; set 0666 (or 0660
+# with a shared group) when the reverse proxy runs as a different user.
+#uds_mode = "0666"
 
 # Trusted reverse-proxy hop count. When > 0, the client IP comes from
 # X-Forwarded-For (capped at this depth) and X-Forwarded-Proto: https marks

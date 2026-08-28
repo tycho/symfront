@@ -595,6 +595,8 @@ pub struct ServeOptions {
     pub store: PathBuf,
     pub listen: String,
     pub uds: Option<PathBuf>,
+    /// Socket file mode (octal, e.g. 0o666); None = umask-derived.
+    pub uds_mode: Option<u32>,
     pub auth_db: Option<PathBuf>,
     pub webauthn_origin: Option<String>,
     pub trusted_proxies: usize,
@@ -611,6 +613,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         store: store_path,
         listen,
         uds,
+        uds_mode,
         auth_db,
         webauthn_origin,
         trusted_proxies,
@@ -746,7 +749,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             let _ = tokio::signal::ctrl_c().await;
             tracing::info!("shutting down");
         };
-        serve_app(app, &listen, uds.as_deref(), shutdown).await?;
+        serve_app(app, &listen, uds.as_deref(), uds_mode, shutdown).await?;
         shutdown_flag.store(true, Ordering::Relaxed);
         return Ok(());
     }
@@ -960,7 +963,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             std::process::exit(130);
         });
     };
-    serve_app(app, &listen, uds.as_deref(), shutdown).await?;
+    serve_app(app, &listen, uds.as_deref(), uds_mode, shutdown).await?;
     bg_stop.store(true, Ordering::Relaxed);
     finish_shutdown(&state).await
 }
@@ -980,6 +983,7 @@ async fn serve_app(
     app: Router,
     listen: &str,
     uds: Option<&std::path::Path>,
+    uds_mode: Option<u32>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     #[cfg(unix)]
@@ -995,15 +999,30 @@ async fn serve_app(
             std::fs::create_dir_all(parent)?;
         }
         let listener = tokio::net::UnixListener::bind(sock)?;
-        tracing::info!("listening on unix:{}", sock.display());
+        if let Some(mode) = uds_mode {
+            // e.g. 0666 when the fronting proxy runs as another user.
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(sock, std::fs::Permissions::from_mode(mode))
+                .map_err(|e| anyhow::anyhow!("setting mode {mode:o} on {}: {e}", sock.display()))?;
+        }
+        tracing::info!(
+            "listening on unix:{}{}",
+            sock.display(),
+            uds_mode
+                .map(|m| format!(" (mode {m:04o})"))
+                .unwrap_or_default()
+        );
         axum::serve(listener, app.into_make_service())
             .with_graceful_shutdown(shutdown)
             .await?;
         return Ok(());
     }
     #[cfg(not(unix))]
-    if uds.is_some() {
-        anyhow::bail!("--uds is only supported on Unix; use --listen");
+    {
+        if uds.is_some() {
+            anyhow::bail!("--uds is only supported on Unix; use --listen");
+        }
+        let _ = uds_mode;
     }
     let addr: SocketAddr = listen.parse()?;
     tracing::info!("listening on http://{addr}");

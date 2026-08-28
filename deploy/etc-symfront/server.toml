@@ -5,6 +5,10 @@
 # For the parallel-run phase, point the symbols-beta vhost at this socket.
 uds = "/run/symfront/http.sock"
 
+# nginx runs as a different user, so it needs world (or shared-group)
+# access to the socket.
+uds_mode = "0666"
+
 # nginx is the one trusted hop in front of us.
 trusted_proxies = 1
 

@@ -62,6 +62,11 @@ enum Command {
         #[cfg_attr(unix, arg(long))]
         #[cfg_attr(not(unix), arg(long, hide = true))]
         uds: Option<std::path::PathBuf>,
+        /// Socket file mode for --uds, octal (e.g. 0666). Overrides
+        /// server.toml; default is umask-derived.
+        #[cfg_attr(unix, arg(long))]
+        #[cfg_attr(not(unix), arg(long, hide = true))]
+        uds_mode: Option<String>,
         /// SQLite auth database; enables authentication. Manage users with
         /// `symfront user` / `symfront token`. Without this the server is open.
         #[arg(long, env = "SYMFRONT_AUTH_DB")]
@@ -241,6 +246,17 @@ enum TxCommand {
     },
 }
 
+/// Parse a socket mode like "0666" / "666" / "0o666" (always octal).
+fn parse_octal_mode(s: &str) -> anyhow::Result<u32> {
+    let digits = s.trim().trim_start_matches("0o");
+    let mode = u32::from_str_radix(digits, 8)
+        .map_err(|_| anyhow::anyhow!("bad socket mode {s:?} (expected octal like \"0666\")"))?;
+    if mode > 0o777 {
+        anyhow::bail!("bad socket mode {s:?} (expected octal like \"0666\")");
+    }
+    Ok(mode)
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
@@ -344,6 +360,7 @@ fn main() -> anyhow::Result<()> {
         Command::Serve {
             listen,
             uds,
+            uds_mode,
             auth_db,
             webauthn_origin,
             trusted_proxies,
@@ -365,6 +382,10 @@ fn main() -> anyhow::Result<()> {
                         cfg.server.uds.clone()
                     }
                 }),
+                uds_mode: uds_mode
+                    .or_else(|| cfg.server.uds_mode.clone())
+                    .map(|m| parse_octal_mode(&m))
+                    .transpose()?,
                 auth_db: auth_db.or_else(|| cfg.server.auth_db.clone()),
                 webauthn_origin: webauthn_origin.or_else(|| cfg.server.webauthn_origin.clone()),
                 trusted_proxies: trusted_proxies.or(cfg.server.trusted_proxies).unwrap_or(0),
