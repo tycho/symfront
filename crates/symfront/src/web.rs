@@ -629,8 +629,11 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             Err(e) => tracing::warn!("config history unavailable: {e:#}"),
         }
     }
-    let auth = match &auth_db {
-        Some(path) => {
+    // --proxy-only has no admin/auth surface: don't open the auth db or log
+    // "authentication enabled" for a server that can't use it.
+    let auth = match (&auth_db, proxy_only) {
+        (_, true) | (None, _) => None,
+        (Some(path), false) => {
             let db = AuthDb::open(path)?;
             if db.list_users()?.is_empty() {
                 tracing::warn!(
@@ -640,29 +643,53 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             }
             // Passkeys only work in secure contexts: localhost over http, or
             // anything behind an https-terminating proxy with a matching
-            // --webauthn-origin.
-            let origin_str = webauthn_origin.clone().unwrap_or_else(|| {
-                let port = listen.rsplit(':').next().unwrap_or("8710");
-                format!("http://localhost:{port}")
-            });
-            let webauthn = (|| -> anyhow::Result<webauthn_rs::Webauthn> {
-                let origin = webauthn_rs::prelude::Url::parse(&origin_str)?;
-                let rp_id = origin
-                    .host_str()
-                    .ok_or_else(|| anyhow::anyhow!("origin has no host"))?
-                    .to_string();
-                Ok(webauthn_rs::WebauthnBuilder::new(&rp_id, &origin)?
-                    .rp_name("symfront")
-                    .build()?)
-            })();
-            let webauthn = match webauthn {
-                Ok(w) => {
-                    tracing::info!("webauthn enabled for origin {origin_str}");
-                    Some(w)
-                }
-                Err(e) => {
-                    tracing::warn!("webauthn disabled: {e} (origin {origin_str})");
+            // webauthn_origin. The localhost guess only makes sense when we
+            // actually listen on TCP — on a unix socket the public origin is
+            // whatever the fronting proxy serves, and we can't know it.
+            let origin_str = webauthn_origin.clone().or_else(|| {
+                if uds.is_some() {
                     None
+                } else {
+                    let port = listen.rsplit(':').next().unwrap_or("8710");
+                    Some(format!("http://localhost:{port}"))
+                }
+            });
+            let webauthn = match &origin_str {
+                None => {
+                    tracing::warn!(
+                        "webauthn disabled: listening on a unix socket with no \
+                         webauthn_origin configured; set it to the public URL \
+                         (e.g. https://symbols.example.com) in server.toml"
+                    );
+                    None
+                }
+                Some(origin_str) => {
+                    let built = (|| -> anyhow::Result<webauthn_rs::Webauthn> {
+                        let origin = webauthn_rs::prelude::Url::parse(origin_str)?;
+                        let rp_id = origin
+                            .host_str()
+                            .ok_or_else(|| anyhow::anyhow!("origin has no host"))?
+                            .to_string();
+                        Ok(webauthn_rs::WebauthnBuilder::new(&rp_id, &origin)?
+                            .rp_name("symfront")
+                            .build()?)
+                    })();
+                    match built {
+                        Ok(w) => {
+                            let guessed = if webauthn_origin.is_none() {
+                                " (guessed from the listen address; set \
+                                 webauthn_origin to serve any other URL)"
+                            } else {
+                                ""
+                            };
+                            tracing::info!("webauthn enabled for origin {origin_str}{guessed}");
+                            Some(w)
+                        }
+                        Err(e) => {
+                            tracing::warn!("webauthn disabled: {e} (origin {origin_str})");
+                            None
+                        }
+                    }
                 }
             };
             tracing::info!("authentication enabled ({})", path.display());
@@ -673,7 +700,6 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
                 pending_regs: Mutex::new(HashMap::new()),
             }))
         }
-        None => None,
     };
     if trusted_proxies > 0 {
         tracing::info!(
