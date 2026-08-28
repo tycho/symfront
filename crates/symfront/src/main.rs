@@ -348,18 +348,30 @@ fn main() -> anyhow::Result<()> {
             webauthn_origin,
             trusted_proxies,
             proxy_only,
-        } => web::serve(web::ServeOptions {
-            store,
-            listen: listen
-                .or_else(|| cfg.server.listen.clone())
-                .unwrap_or_else(|| "127.0.0.1:8710".into()),
-            uds: uds.or_else(|| cfg.server.uds.clone()),
-            auth_db: auth_db.or_else(|| cfg.server.auth_db.clone()),
-            webauthn_origin: webauthn_origin.or_else(|| cfg.server.webauthn_origin.clone()),
-            trusted_proxies: trusted_proxies.or(cfg.server.trusted_proxies).unwrap_or(0),
-            proxy_only,
-            config_dir: cfg.dir.clone(),
-        }),
+        } => {
+            // An explicit --listen means "TCP, this address": it must not be
+            // silently outranked by a uds= line in server.toml (a uds always
+            // beats a listen when both come from the config file).
+            let explicit_listen = listen.is_some();
+            web::serve(web::ServeOptions {
+                store,
+                listen: listen
+                    .or_else(|| cfg.server.listen.clone())
+                    .unwrap_or_else(|| "127.0.0.1:8710".into()),
+                uds: uds.or_else(|| {
+                    if explicit_listen {
+                        None
+                    } else {
+                        cfg.server.uds.clone()
+                    }
+                }),
+                auth_db: auth_db.or_else(|| cfg.server.auth_db.clone()),
+                webauthn_origin: webauthn_origin.or_else(|| cfg.server.webauthn_origin.clone()),
+                trusted_proxies: trusted_proxies.or(cfg.server.trusted_proxies).unwrap_or(0),
+                proxy_only,
+                config_dir: cfg.dir.clone(),
+            })
+        }
         Command::Init => cli::init(&store),
         Command::Status => cli::status(&store),
         Command::Tx { command } => match command {
