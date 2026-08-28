@@ -456,6 +456,14 @@ fn render_metrics(engine: &ProxyEngine, out: &mut String) {
                 "symfront_upstream_throughput_bytes_per_second{{upstream=\"{name}\"}} {:.0}",
                 u.throughput()
             );
+            for (class, window) in [("2xx", &u.latency_2xx), ("4xx", &u.latency_4xx)] {
+                if let Some(p50) = window.median() {
+                    let _ = writeln!(
+                        out,
+                        "symfront_upstream_ttfb_ms{{upstream=\"{name}\",class=\"{class}\"}} {p50:.1}"
+                    );
+                }
+            }
         }
         let _ = writeln!(out, "# TYPE symfront_upstream_suspended gauge");
         for (name, (suspended, _)) in &health {
@@ -510,6 +518,12 @@ pub(crate) fn stats_json(state: &ProxyState) -> serde_json::Value {
                         "errors": load(&u.errors),
                         "transport_failures": load(&u.transport_failures),
                         "throughput_bps": u.throughput(),
+                        "ttfb_ms": {
+                            "p50_2xx": u.latency_2xx.median(),
+                            "p50_4xx": u.latency_4xx.median(),
+                            "samples_2xx": u.latency_2xx.len(),
+                            "samples_4xx": u.latency_4xx.len(),
+                        },
                     }),
                 )
             })

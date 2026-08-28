@@ -805,3 +805,38 @@ async fn short_buildids_never_reach_debuginfod() {
         "guard disabled: probed"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ttfb_medians_split_by_response_class() {
+    let fake = Fake::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine_with(
+        dir.path(),
+        test_config(dir.path()),
+        vec![upstream("u", &fake.base_url())],
+    );
+
+    // One 200 fill and one 404: each lands in its own latency window.
+    fake.set(PDB, Reply::Body(b"bytes".to_vec()));
+    assert_eq!(fetch(&engine, PDB).await.0, 200);
+    let missing = "/gone.pdb/ABCDEF01234567890123456789ABCDEF9/gone.pdb";
+    assert_eq!(fetch(&engine, missing).await.0, 404);
+
+    let stats = engine.stats.upstream("u");
+    assert_eq!(stats.latency_2xx.len(), 1, "one 2xx sample");
+    assert_eq!(stats.latency_4xx.len(), 1, "one 4xx sample");
+    assert!(stats.latency_2xx.median().unwrap() >= 0.0);
+    assert!(stats.latency_4xx.median().unwrap() >= 0.0);
+
+    // A slow 404 shows up in the 4xx median, leaving 2xx untouched.
+    let slow = "/slow.pdb/ABCDEF01234567890123456789ABCDEF8/slow.pdb";
+    fake.set(slow, Reply::SlowStatus(404, Duration::from_millis(120)));
+    assert_eq!(fetch(&engine, slow).await.0, 404);
+    assert_eq!(stats.latency_4xx.len(), 2);
+    let sorted_in = stats.latency_4xx.median().unwrap();
+    assert!(
+        sorted_in >= 50.0,
+        "slow 404 must raise the 4xx median (got {sorted_in}ms)"
+    );
+    assert_eq!(stats.latency_2xx.len(), 1, "2xx window unaffected");
+}

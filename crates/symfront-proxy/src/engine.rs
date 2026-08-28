@@ -348,6 +348,7 @@ impl ProxyEngine {
         if let Some(lm) = entry.last_modified {
             request = request.header("If-Modified-Since", crate::cache::format_http_date(lm));
         }
+        let sent_at = Instant::now();
         let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
@@ -366,6 +367,9 @@ impl ProxyEngine {
             }
         };
         let status = response.status().as_u16();
+        self.stats
+            .upstream(&cand.upstream.name)
+            .observe_ttfb(status, sent_at.elapsed());
         if status == 304 {
             // Still good: refresh the TTL (slides like any positive hit) and
             // serve from cache without a re-download.
@@ -556,6 +560,7 @@ impl ProxyEngine {
             .get(&cand.key.full_url)
             .header("Accept-Encoding", "identity");
         let request = apply_checksum(request, &cand.upstream, checksum);
+        let sent_at = Instant::now();
         let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
@@ -574,6 +579,9 @@ impl ProxyEngine {
             }
         };
         let status = response.status().as_u16();
+        self.stats
+            .upstream(&cand.upstream.name)
+            .observe_ttfb(status, sent_at.elapsed());
         if status == 200 {
             match self.begin_fill(cand, response, Some(slot)).await {
                 Some(handle) => AttemptResult::Success(Outcome::Fill {
@@ -724,9 +732,13 @@ impl ProxyEngine {
         }
         .header("Accept-Encoding", "identity");
         let request = apply_checksum(request, &cand.upstream, checksum);
+        let sent_at = Instant::now();
         match request.send().await {
             Ok(response) => {
                 let status = response.status().as_u16();
+                self.stats
+                    .upstream(&cand.upstream.name)
+                    .observe_ttfb(status, sent_at.elapsed());
                 if status == 200 {
                     AttemptResult::Success(Outcome::Passthrough {
                         response: Box::new(response),

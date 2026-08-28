@@ -1458,6 +1458,7 @@ function renderProxyLive(s) {
   const hitRate = answered ? (100 * localAnswers / answered) : null;
   const saved = s.estimated_seconds_saved || 0;
   const cfgByName = Object.fromEntries((s.upstream_config || []).map(u => [u.name, u]));
+  const ms = v => v == null ? '—' : v < 1000 ? v.toFixed(0) + 'ms' : (v / 1000).toFixed(2) + 's';
   const upstreamRows = Object.keys(s.health || {}).length
     ? Object.keys(s.health || {}).sort().map(name => {
         const cfg = cfgByName[name] || {};
@@ -1476,10 +1477,11 @@ function renderProxyLive(s) {
           <td class="num">${num(u.fills)}</td><td class="num">${fmt(u.fill_bytes)}</td>
           <td class="num">${num(u.negatives)}</td><td class="num">${num(u.errors)}</td>
           <td class="num">${num(u.transport_failures)}</td>
+          <td class="num" title="${u.ttfb_ms ? `over the last ${u.ttfb_ms.samples_2xx} hits / ${u.ttfb_ms.samples_4xx} misses` : ''}">${u.ttfb_ms ? `${ms(u.ttfb_ms.p50_2xx)} / ${ms(u.ttfb_ms.p50_4xx)}` : '—'}</td>
           <td class="num">${u.throughput_bps ? fmt(u.throughput_bps) + '/s' : '—'}</td>
           <td>${act}</td></tr>`;
       }).join('')
-    : '<tr><td colspan="11" class="muted">no upstreams</td></tr>';
+    : '<tr><td colspan="12" class="muted">no upstreams</td></tr>';
   live.innerHTML = `
     <div class="cards">
       <div class="card"><div class="k">Requests</div><div class="v">${num(answered)}</div>
@@ -1499,6 +1501,7 @@ function renderProxyLive(s) {
       <th class="num" title="complete 4xx responses (negative-cached)">negatives</th>
       <th class="num" title="complete HTTP 5xx responses passed through to the client; never cached, never trips the breaker">5xx</th>
       <th class="num" title="connection/DNS/timeout failures — no complete HTTP response; these suspend the upstream until a probe restores it">transport</th>
+      <th class="num" title="median time to complete response headers over the last 64 requests: 2xx / 4xx (negative answers often take a different path upstream)">p50 ttfb</th>
       <th class="num">throughput</th><th></th></tr></thead>
       <tbody>${upstreamRows}</tbody></table>`;
   live.querySelectorAll('[data-suspend]').forEach(btn =>

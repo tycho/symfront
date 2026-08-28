@@ -31,6 +31,45 @@ pub enum RequestOutcome {
     Error,
 }
 
+/// Sliding window of the most recent TTFB samples (milliseconds).
+/// "TTFB" here = time until complete response headers arrived (the body,
+/// if any, hasn't been read yet).
+#[derive(Default)]
+pub struct LatencyWindow {
+    samples: Mutex<std::collections::VecDeque<f32>>,
+}
+
+/// Median over this many most-recent requests.
+const LATENCY_WINDOW: usize = 64;
+
+impl LatencyWindow {
+    pub fn record(&self, ms: f32) {
+        let mut s = self.samples.lock().unwrap();
+        if s.len() == LATENCY_WINDOW {
+            s.pop_front();
+        }
+        s.push_back(ms);
+    }
+
+    pub fn median(&self) -> Option<f32> {
+        let s = self.samples.lock().unwrap();
+        if s.is_empty() {
+            return None;
+        }
+        let mut v: Vec<f32> = s.iter().copied().collect();
+        v.sort_by(|a, b| a.total_cmp(b));
+        Some(v[v.len() / 2])
+    }
+
+    pub fn len(&self) -> usize {
+        self.samples.lock().unwrap().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 #[derive(Default)]
 pub struct UpstreamStats {
     pub fills: AtomicU64,
@@ -41,9 +80,25 @@ pub struct UpstreamStats {
     pub transport_failures: AtomicU64,
     /// Bytes/sec EMA over observed fills, stored as bits of an f64.
     throughput_ema: AtomicU64,
+    /// Header latency for successful (2xx) responses.
+    pub latency_2xx: LatencyWindow,
+    /// Header latency for negative (4xx) responses — often a different
+    /// serving path upstream, so tracked separately.
+    pub latency_4xx: LatencyWindow,
 }
 
 impl UpstreamStats {
+    /// Record time-to-complete-headers for a finished upstream exchange.
+    /// Only 2xx and 4xx are windowed; probe traffic is never recorded.
+    pub fn observe_ttfb(&self, status: u16, elapsed: std::time::Duration) {
+        let ms = (elapsed.as_secs_f64() * 1000.0) as f32;
+        match status {
+            200..=299 => self.latency_2xx.record(ms),
+            400..=499 => self.latency_4xx.record(ms),
+            _ => {}
+        }
+    }
+
     pub fn throughput(&self) -> f64 {
         f64::from_bits(self.throughput_ema.load(Ordering::Relaxed))
     }
