@@ -319,3 +319,122 @@ pub(crate) async fn config_rollback(
         .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")))?;
     Ok(Json(json!({ "ok": true, "commit": id, "summary": summary })))
 }
+
+/// The editable config files, by exact name.
+const EDITABLE: &[&str] = &[
+    crate::config::SERVER_TOML,
+    crate::config::STORE_TOML,
+    crate::config::PROXY_TOML,
+    crate::config::UPSTREAMS_TOML,
+    crate::config::BLACKLIST_TOML,
+];
+
+fn config_dir_of(state: &App) -> ApiResult<std::path::PathBuf> {
+    state.proxy.config_dir.clone().ok_or_else(|| {
+        ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "no config tree on this server".into(),
+        )
+    })
+}
+
+pub(crate) async fn config_files(State(state): State<App>) -> ApiResult<Json<serde_json::Value>> {
+    let dir = config_dir_of(&state)?;
+    let files: Vec<serde_json::Value> = EDITABLE
+        .iter()
+        .map(|name| {
+            let exists = dir.join(name).is_file();
+            json!({ "name": name, "exists": exists })
+        })
+        .collect();
+    Ok(Json(json!({ "files": files })))
+}
+
+pub(crate) async fn config_get_file(
+    State(state): State<App>,
+    AxPath(name): AxPath<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let dir = config_dir_of(&state)?;
+    if !EDITABLE.contains(&name.as_str()) {
+        return Err(ApiError(StatusCode::NOT_FOUND, "unknown config file".into()));
+    }
+    let text = std::fs::read_to_string(dir.join(&name)).unwrap_or_default();
+    Ok(Json(json!({ "name": name, "content": text })))
+}
+
+/// Validate `content` as the named config file (without touching disk).
+fn validate_config(name: &str, content: &str) -> Result<(), String> {
+    let err = |e: String| Err(e);
+    match name {
+        n if n == crate::config::SERVER_TOML => {
+            toml::from_str::<crate::config::ServerConfig>(content)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        n if n == crate::config::STORE_TOML => {
+            toml::from_str::<crate::config::StoreConfig>(content)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        n => {
+            // Proxy-side files: the parsers take paths; validate via a
+            // temp file so a bad save can never half-apply.
+            let tmp = std::env::temp_dir().join(format!(
+                ".symfront-validate-{}-{n}",
+                std::process::id()
+            ));
+            if let Err(e) = std::fs::write(&tmp, content) {
+                return err(e.to_string());
+            }
+            let result = if n == crate::config::PROXY_TOML {
+                symfront_proxy::config::ProxyConfig::from_file(&tmp).map(|_| ())
+            } else if n == crate::config::UPSTREAMS_TOML {
+                symfront_proxy::config::upstreams_from_file(&tmp).map(|_| ())
+            } else {
+                symfront_proxy::config::blacklist_from_file(&tmp).map(|_| ())
+            };
+            let _ = std::fs::remove_file(&tmp);
+            result.map_err(|e| e.to_string())
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PutFileRequest {
+    content: String,
+}
+
+pub(crate) async fn config_put_file(
+    State(state): State<App>,
+    AxPath(name): AxPath<String>,
+    ctx: Option<axum::Extension<AuthCtx>>,
+    Json(req): Json<PutFileRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let dir = config_dir_of(&state)?;
+    if !EDITABLE.contains(&name.as_str()) {
+        return Err(ApiError(StatusCode::NOT_FOUND, "unknown config file".into()));
+    }
+    validate_config(&name, &req.content)
+        .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{name}: {e}")))?;
+    let store = config_store_of(&state)?;
+    // Manual edits made since the last commit become their own commit first,
+    // so this save can never silently absorb them.
+    store
+        .commit_drift()
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+    std::fs::write(dir.join(&name), &req.content)
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let author = ctx
+        .as_ref()
+        .map(|c| c.user.name.clone())
+        .unwrap_or_else(|| "symfront".into());
+    let commit = store
+        .commit_all(&author, &format!("edit {name} via web UI"))
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+    let proxy = Arc::clone(&state.proxy);
+    let summary = tokio::task::spawn_blocking(move || crate::pipeline::reload(&proxy))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| ApiError(StatusCode::UNPROCESSABLE_ENTITY, format!("{e:#}")))?;
+    Ok(Json(json!({ "ok": true, "commit": commit, "summary": summary })))
+}

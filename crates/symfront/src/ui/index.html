@@ -135,6 +135,7 @@
   <a href="#search" data-tab="search">Search</a>
   <a href="#strays" data-tab="strays">Strays</a>
   <a href="#check" data-tab="check">Check</a>
+  <a href="#proxy" data-tab="proxy">Proxy</a>
   <a href="#upload" data-tab="upload" id="navUpload">Upload</a>
   <a href="#account" data-tab="account" id="navAccount" hidden>Account</a>
   <a href="#admin" data-tab="admin" id="navAdmin" hidden>Admin</a>
@@ -171,6 +172,8 @@
   </section>
 
   <section id="tab-check" hidden></section>
+
+  <section id="tab-proxy" hidden></section>
 
   <section id="tab-upload" hidden>
     <div class="toolbar">
@@ -344,7 +347,7 @@ function route() {
   closeDetail();
   if (txMatch) openTxPage(+txMatch[1]);
   else ({overview: renderOverview, transactions: loadTransactions, strays: loadStrays,
-         check: loadCheck, account: loadAccount, admin: loadAdmin,
+         check: loadCheck, account: loadAccount, admin: loadAdmin, proxy: loadProxy,
          upload: checkUploadResume}[tab] || (()=>{}))();
 }
 window.addEventListener('hashchange', route);
@@ -391,6 +394,8 @@ function updateScanHeader(sc) {
 function jobLabel(j) {
   return j.kind === 'delete' ? `deleting tx ${j.target}`
        : j.kind === 'add' ? `adding "${j.target}"`
+       : j.kind === 'proxy-evict' ? 'cache eviction'
+       : j.kind === 'proxy-scrub' ? 'cache scrub'
        : `pruning ${j.target}`;
 }
 
@@ -403,7 +408,14 @@ function renderJobs(jobs) {
       body = `${num(p.done)}/${num(p.total)} · ${num(p.files_removed)} files · ${fmt(p.freed_apparent)} freed`;
     } else if (j.state === 'done') {
       const o = j.outcome || {};
-      body = `✓ done — ${num(o.files_removed)} files removed, ${fmt(o.freed_apparent)} apparent / ${fmt(o.freed_disk)} on disk freed`;
+      if (j.kind === 'proxy-evict') {
+        body = o.enabled === false ? '✓ done — eviction disabled (no cache.size)'
+          : `✓ done — ${num(o.evicted_entries)} entries / ${fmt(o.evicted_bytes)} evicted, cache now ${fmt(o.after_bytes)}`;
+      } else if (j.kind === 'proxy-scrub') {
+        body = `✓ done — ${num(o.data_files)} files vs ${num(o.db_rows)} rows: ${num(o.orphan_files)} orphans (${fmt(o.orphan_bytes)}), ${num(o.rows_missing_data)} rows missing data, ${num(o.size_mismatches)} size mismatches${o.repaired ? ' — repaired' : ' (report only)'}`;
+      } else {
+        body = `✓ done — ${num(o.files_removed)} files removed, ${fmt(o.freed_apparent)} apparent / ${fmt(o.freed_disk)} on disk freed`;
+      }
     } else {
       body = `✗ failed: ${esc(j.error)}`;
     }
@@ -1364,6 +1376,227 @@ async function loadAccount() {
 }
 
 /* ---------- admin page ---------- */
+/* ---------- proxy dashboard ---------- */
+const isAdminUser = () => !me?.auth_enabled || me?.user?.role === 'admin';
+let proxyStats = null;
+
+async function loadProxy() {
+  const el = $('#tab-proxy');
+  let s;
+  try { s = await api('api/proxy/stats'); }
+  catch (e) { el.innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
+  proxyStats = s;
+  if (!s.enabled) {
+    el.innerHTML = `<div class="banner info">Proxy tier is not configured — add at least one
+      <span class="mono">[[upstream]]</span> to upstreams.toml.</div>
+      ${isAdminUser() ? proxyConfigHtml() : ''}`;
+    if (isAdminUser()) initProxyConfig();
+    return;
+  }
+  const r = s.requests, b = s.bytes, c = s.cache || {};
+  const answered = r.tier0_hits + r.cache_hits + r.fills + r.negative_hits + r.passthroughs + r.misses + r.errors;
+  const localAnswers = r.tier0_hits + r.cache_hits + r.negative_hits;
+  const hitRate = answered ? (100 * localAnswers / answered) : null;
+  const saved = s.estimated_seconds_saved || 0;
+  const cfgByName = Object.fromEntries((s.upstream_config || []).map(u => [u.name, u]));
+  const upstreamRows = Object.entries(s.upstreams || {}).length || Object.keys(s.health || {}).length
+    ? Object.keys(s.health || {}).sort().map(name => {
+        const cfg = cfgByName[name] || {};
+        const u = (s.upstreams || {})[name] || {};
+        const h = (s.health || {})[name] || {};
+        const state = !cfg.enabled ? '<span class="pill anomalous">disabled</span>'
+          : h.suspended ? `<span class="pill deleted" title="${esc(h.info?.cause || '')}">suspended</span>`
+          : '<span class="pill active">healthy</span>';
+        const act = canMutate() && cfg.enabled
+          ? (h.suspended
+             ? `<button class="btn" data-resume="${esc(name)}">resume</button>`
+             : `<button class="btn" data-suspend="${esc(name)}">suspend</button>`)
+          : '';
+        return `<tr><td class="mono">${esc(name)}</td><td>${state}</td>
+          <td>${esc(cfg.layout || '')}</td><td class="num">${cfg.priority ?? ''}</td>
+          <td class="num">${num(u.fills)}</td><td class="num">${fmt(u.fill_bytes)}</td>
+          <td class="num">${num(u.negatives)}</td><td class="num">${num(u.errors)}</td>
+          <td class="num">${u.throughput_bps ? fmt(u.throughput_bps) + '/s' : '—'}</td>
+          <td>${act}</td></tr>`;
+      }).join('')
+    : '<tr><td colspan="10" class="muted">no upstreams</td></tr>';
+  el.innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="k">Requests</div><div class="v">${num(answered)}</div>
+        <div class="sub">${num(r.tier0_hits)} store · ${num(r.cache_hits)} cache · ${num(r.fills)} fills</div></div>
+      <div class="card"><div class="k">Answered locally</div><div class="v">${hitRate == null ? '—' : hitRate.toFixed(1) + '%'}</div>
+        <div class="sub">${num(r.negative_hits)} negative hits · ${num(r.misses)} misses</div></div>
+      <div class="card"><div class="k">Bandwidth saved</div><div class="v">${fmt(b.from_cache)}</div>
+        <div class="sub">${fmt(b.fetched)} fetched upstream</div></div>
+      <div class="card"><div class="k">Est. time saved</div><div class="v">${saved >= 3600 ? (saved/3600).toFixed(1) + ' h' : saved >= 60 ? (saved/60).toFixed(1) + ' m' : saved.toFixed(0) + ' s'}</div>
+        <div class="sub">at observed fill speeds</div></div>
+      <div class="card"><div class="k">Cache</div><div class="v">${fmt(c.positive_bytes)}</div>
+        <div class="sub">${c.size_limit ? (100 * c.positive_bytes / c.size_limit).toFixed(1) + '% of ' + fmt(c.size_limit) : 'no size budget'} · ${num(c.negative_entries)} negatives</div></div>
+    </div>
+    <h3 style="margin-top:20px">Upstreams</h3>
+    <table><thead><tr><th>name</th><th>state</th><th>layout</th><th class="num">tier</th>
+      <th class="num">fills</th><th class="num">filled</th><th class="num">negatives</th>
+      <th class="num">errors</th><th class="num">throughput</th><th></th></tr></thead>
+      <tbody>${upstreamRows}</tbody></table>
+    ${canMutate() ? `<p style="margin-top:12px">
+      <button class="btn" id="proxyEvictBtn">Run eviction</button>
+      <button class="btn" id="proxyScrubBtn">Run scrub</button>
+      <span class="muted">eviction also runs automatically; scrub weekly</span></p>` : ''}
+    <h3 style="margin-top:20px">Cache entries</h3>
+    <p><input id="proxySearch" placeholder="search cached URLs…" style="width:340px">
+      <button class="btn" id="proxySearchBtn">Search</button>
+      ${canMutate() ? `<button class="btn" id="proxyPurgeNegBtn" title="evict negative entries whose URL contains the search text">Forget matching 404s</button>` : ''}</p>
+    <div id="proxySearchOut"></div>
+    ${isAdminUser() ? proxyConfigHtml() : ''}`;
+  document.querySelectorAll('#tab-proxy [data-suspend]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      try { await post(`api/proxy/upstreams/${encodeURIComponent(btn.dataset.suspend)}/suspend`); loadProxy(); }
+      catch (e) { alert(e.message); }
+    }));
+  document.querySelectorAll('#tab-proxy [data-resume]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      try { await post(`api/proxy/upstreams/${encodeURIComponent(btn.dataset.resume)}/resume`); loadProxy(); }
+      catch (e) { alert(e.message); }
+    }));
+  $('#proxyEvictBtn')?.addEventListener('click', async () => {
+    try { await post('api/proxy/evict'); } catch (e) { alert(e.message); }
+  });
+  $('#proxyScrubBtn')?.addEventListener('click', async () => {
+    try { await post('api/proxy/scrub', {repair: true}); } catch (e) { alert(e.message); }
+  });
+  const doSearch = async () => {
+    const q = $('#proxySearch').value.trim();
+    if (!q) return;
+    try { renderProxyEntries(await api(`api/proxy/cache/search?q=${encodeURIComponent(q)}`)); }
+    catch (e) { $('#proxySearchOut').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  };
+  $('#proxySearchBtn').addEventListener('click', doSearch);
+  $('#proxySearch').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  $('#proxyPurgeNegBtn')?.addEventListener('click', async () => {
+    const q = $('#proxySearch').value.trim();
+    if (!q) { alert('enter a URL substring first'); return; }
+    if (!confirm(`Evict all negative (non-200) cache entries whose URL contains "${q}"?`)) return;
+    try {
+      const r = await post('api/proxy/cache/evict', {negative_only: true, url_substring: q});
+      alert(`${r.evicted} entries evicted`);
+      doSearch();
+    } catch (e) { alert(e.message); }
+  });
+  if (isAdminUser()) initProxyConfig();
+}
+
+function renderProxyEntries(d) {
+  const rows = (d.entries || []).map(e => `<tr>
+    <td class="mono" style="max-width:420px;overflow:hidden;text-overflow:ellipsis" title="${esc(e.url)}">${esc(e.url)}</td>
+    <td>${esc(e.upstream)}</td>
+    <td class="num">${e.status}${e.status !== 200 && e.negative_step ? ` <span class="muted">(step ${e.negative_step})</span>` : ''}</td>
+    <td class="num">${e.status === 200 ? fmt(e.size) : '—'}</td>
+    <td class="num">${num(e.hit_count)}</td>
+    <td class="num" title="expires">${new Date(e.expires_at * 1000).toLocaleDateString()}</td>
+    <td>${canMutate() ? `<button class="btn" data-evict-key="${e.key}">evict</button>` : ''}</td></tr>`).join('');
+  $('#proxySearchOut').innerHTML = rows
+    ? `<table><thead><tr><th>url</th><th>upstream</th><th class="num">status</th>
+       <th class="num">size</th><th class="num">hits</th><th class="num">expires</th><th></th></tr></thead>
+       <tbody>${rows}</tbody></table>`
+    : '<p class="muted">no matching entries</p>';
+  document.querySelectorAll('#proxySearchOut [data-evict-key]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      try { await api(`api/proxy/cache/entry/${btn.dataset.evictKey}`, {method: 'DELETE'}); btn.closest('tr').remove(); }
+      catch (e) { alert(e.message); }
+    }));
+}
+
+/* ---------- config editor (admin role) ---------- */
+function proxyConfigHtml() {
+  return `<h3 style="margin-top:24px">Configuration</h3>
+  <p class="muted">Edits commit to the config history and reload the proxy immediately.
+    Manual on-disk edits are auto-committed before any save, so nothing is ever silently lost.</p>
+  <p>
+    <select id="cfgFile"></select>
+    <button class="btn" id="cfgLoadBtn">Load</button>
+    <button class="btn" id="cfgSaveBtn">Save &amp; reload</button>
+    <button class="btn" id="cfgReloadBtn" title="re-read the tree from disk (same as SIGHUP)">Reload config</button>
+  </p>
+  <textarea id="cfgText" spellcheck="false" style="width:100%;height:300px;font-family:ui-monospace,monospace;
+    font-size:13px;background:var(--bg2,#161b22);color:var(--text);border:1px solid var(--line,#30363d);
+    border-radius:6px;padding:10px;box-sizing:border-box" hidden></textarea>
+  <div id="cfgOut"></div>
+  <h3 style="margin-top:20px">Config history</h3>
+  <div id="cfgLog"></div>
+  <div id="cfgDiff"></div>`;
+}
+
+async function initProxyConfig() {
+  let files;
+  try { files = (await api('api/admin/config/files')).files; }
+  catch (e) { $('#cfgLog').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
+  $('#cfgFile').innerHTML = files.map(f =>
+    `<option value="${esc(f.name)}">${esc(f.name)}${f.exists ? '' : ' (missing)'}</option>`).join('');
+  const loadFile = async () => {
+    try {
+      const d = await api(`api/admin/config/file/${encodeURIComponent($('#cfgFile').value)}`);
+      $('#cfgText').hidden = false;
+      $('#cfgText').value = d.content;
+      $('#cfgOut').innerHTML = '';
+    } catch (e) { $('#cfgOut').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  };
+  $('#cfgLoadBtn').addEventListener('click', loadFile);
+  $('#cfgFile').addEventListener('change', loadFile);
+  $('#cfgSaveBtn').addEventListener('click', async () => {
+    if ($('#cfgText').hidden) { alert('load a file first'); return; }
+    try {
+      const r = await post(`api/admin/config/file/${encodeURIComponent($('#cfgFile').value)}`,
+                           {content: $('#cfgText').value});
+      $('#cfgOut').innerHTML = `<div class="banner ok">Saved as ${esc(r.commit.slice(0,10))} — ${esc(r.summary)}</div>`;
+      refreshCfgLog();
+    } catch (e) { $('#cfgOut').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  });
+  $('#cfgReloadBtn').addEventListener('click', async () => {
+    try {
+      const r = await post('api/admin/config/reload');
+      $('#cfgOut').innerHTML = `<div class="banner ok">${esc(r.summary)}</div>`;
+      refreshCfgLog();
+    } catch (e) { $('#cfgOut').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  });
+  refreshCfgLog();
+}
+
+async function refreshCfgLog() {
+  let d;
+  try { d = await api('api/admin/config/log?limit=15'); }
+  catch (e) { $('#cfgLog').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; return; }
+  $('#cfgLog').innerHTML = `
+    ${d.dirty ? '<div class="banner info">Uncommitted manual edits on disk (auto-committed on next save/reload).</div>' : ''}
+    <table><thead><tr><th>commit</th><th>when</th><th>author</th><th>message</th><th></th></tr></thead>
+    <tbody>${(d.entries || []).map((e, i) => `<tr>
+      <td class="mono">${esc(e.short_id)}</td>
+      <td>${new Date(e.time * 1000).toLocaleString()}</td>
+      <td>${esc(e.author)}</td>
+      <td>${esc(e.message)}</td>
+      <td><button class="btn" data-cfg-diff="${esc(e.id)}">diff</button>
+        ${i > 0 ? `<button class="btn" data-cfg-rollback="${esc(e.id)}" data-short="${esc(e.short_id)}">rollback</button>` : ''}</td>
+    </tr>`).join('')}</tbody></table>`;
+  document.querySelectorAll('#cfgLog [data-cfg-diff]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      try {
+        const d = await api(`api/admin/config/diff?from=${encodeURIComponent(btn.dataset.cfgDiff)}`);
+        $('#cfgDiff').innerHTML = d.diff
+          ? `<h3>Diff vs ${esc(btn.dataset.cfgDiff.slice(0,10))} (that commit → current tree)</h3>
+             <pre style="background:var(--bg2,#161b22);padding:12px;border-radius:6px;overflow:auto;font-size:12px">${esc(d.diff)}</pre>`
+          : '<p class="muted">no differences vs that commit</p>';
+      } catch (e) { alert(e.message); }
+    }));
+  document.querySelectorAll('#cfgLog [data-cfg-rollback]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Roll the config tree back to ${btn.dataset.short}? (recorded as a new commit, then reloaded)`)) return;
+      try {
+        const r = await post('api/admin/config/rollback', {rev: btn.dataset.cfgRollback});
+        $('#cfgOut').innerHTML = `<div class="banner ok">Rolled back: ${esc(r.summary)}</div>`;
+        refreshCfgLog();
+      } catch (e) { alert(e.message); }
+    }));
+}
+
 async function loadAdmin() {
   const el = $('#tab-admin');
   el.innerHTML = '<p class="muted">loading…</p>';
