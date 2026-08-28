@@ -1,6 +1,6 @@
 # Plan: folding the symsrv caching proxy into symfront
 
-Status: **planning complete (rev 2, incorporating owner review)** —
+Status: **planning complete (rev 3, final)** —
 pre-implementation architecture review opens the next session. Produced
 2026-08-27 from a full read of the symsrv source at `/srv/cache/ntsymbols`
 (github.com/tycho/symsrv, last commit 2026-08-23) and the live nginx
@@ -55,6 +55,11 @@ deployment (`/etc/nginx/extra/vhosts/ntsymbols.conf`).
 - **Concurrency**: async confined to the socket edge; all decision logic and
   fast-disk work stays synchronous (§ Concurrency model — the guardrails are
   part of the plan, reviewable like any other interface).
+- **Performance mandate**: the Rust proxy must be **strictly faster than the
+  Python implementation in every measured aspect** — cache-hit TTFB and
+  throughput, fill throughput, negative-hit latency, concurrent request
+  handling. The parallel-run phase (§8) includes a benchmark comparison
+  against the live Python instance, and regressions block cutover.
 
 ## 1. symsrv as it exists today (reference semantics)
 
@@ -208,6 +213,36 @@ else.** Concretely:
   workable at this scale but forfeits SSE elegance and reuses none of the
   existing server. Recommendation stands: tokio at the edge, sync core.
 
+### 2a. Fill streaming: write-through + tail-follow
+
+The Python CachePump streams upstream → cache and client simultaneously so
+the client never blocks on cache warming — behavior we must preserve. But it
+couples the upstream read loop to the *cache write* (each chunk awaits the
+disk write before the next read) and decouples the client via an
+**unbounded** queue (memory growth under a slow client). Neither sink should
+throttle the other, and neither should throttle the upstream read.
+
+Target design — **the cache file is the buffer**:
+
+- One fill task per key (the singleflight winner): upstream socket → cache
+  temp file, as fast as network + disk allow, through a bounded channel to
+  the disk writer. Nothing else is in this loop.
+- Clients — the requester, *and* any singleflight followers that arrive
+  during the fill — **tail-read the growing temp file**, woken by an
+  append/completion watch. Each client streams at its own pace; a slow
+  client backpressures nobody (its buffer is the file itself, and
+  recently-written data is RAM-speed via the page cache/ARC); a fast client
+  waits only for bytes that haven't arrived yet.
+- Fill completion → atomic rename + metadata commit; failure → temp file
+  removed, tailing clients get a truncated-stream error.
+- Client disconnect: nothing to do — the fill task never knew about
+  clients. HEAD-upgrade fills are just fills with zero tailing clients.
+- Bonus over Python: singleflight followers currently block until the
+  winner's fill *commits*; here they stream immediately alongside it.
+- `nocache` upstreams (no file to write): direct passthrough streaming with
+  a bounded in-memory buffer (the only case where client pace matters, and
+  it is that client's own transfer).
+
 ### Metadata storage (owner asked for options)
 
 Stay on **SQLite via rusqlite** — with the writer-thread + inline-reads
@@ -268,8 +303,10 @@ These are deliberate improvements; everything not listed ports as-is.
    configurable ladder, e.g. `negative_ttl = ["1h","1h","1h","8h","8h",
    "24h","7d"]` (last entry repeats). Expired negative → re-probe on next
    request → still missing → advance one step. Global default +
-   per-upstream override (e.g. shorter early steps for msdl, which
-   publishes symbols for fresh Windows patches late).
+   per-upstream override. Guidance: the ladder chiefly benefits msdl
+   (symbols for fresh Windows patches appear late); most upstreams are fine
+   with a long flat negative TTL — which is just a single-entry ladder, so
+   one mechanism covers both.
 4. **HEAD coherence.** If the cache has an entry, HEAD is answered from it
    (as today). On a miss, HEAD is upgraded to a **GET fill** for cachable
    upstreams: the client gets headers as soon as upstream headers arrive,
@@ -279,7 +316,7 @@ These are deliberate improvements; everything not listed ports as-is.
    the GET that follows it, and probe-heavy clients warm the cache instead
    of bypassing it.
 5. **Tier stagger instead of tier barriers.** Candidates sort into priority
-   tiers; tier N+1 launches `stagger_ms` (default ~300 ms, configurable)
+   tiers; tier N+1 launches `stagger_ms` (default 100 ms, configurable)
    after tier N *starts*, unless a decisive answer already arrived. First
    200 wins globally; already-launched losers cancelled. `stagger_ms = 0`
    reproduces today's flat behavior. Slow upstreams can no longer add their
@@ -320,7 +357,7 @@ These are deliberate improvements; everything not listed ports as-is.
 | Negative caching | Port + ladder (§3.3). |
 | Singleflight | In-process (HashMap + watch); UDS cross-worker machinery deleted. |
 | Health breaker | Port semantics exactly; in-process state; probes as today. |
-| CachePump | Reimplement (tokio task + channel); client-detach-commit preserved; also powers HEAD-upgrade fills. |
+| CachePump | **Redesigned** as write-through + tail-follow (§2a): preserves client-never-waits-for-cache-warming, fixes the Python weak point where sinks throttled the pump. |
 | X-Accel mode | Keep, optional; header/internal-path configurable. |
 | Blacklists | Port as-is; tier 0 is consulted first regardless. |
 | SymbolChecksum passthrough | Port as-is. |
@@ -424,8 +461,8 @@ Owner-requested value-add over symstore.exe, phased **after** proxy parity:
 
 1. Eviction watermark defaults (e.g. start at 100% of `cache.size`, stop at
    95%?) and scrub schedule default (weekly?).
-2. `stagger_ms` default (300 ms proposed) and per-upstream vs. per-tier
-   configuration.
+2. `stagger_ms`: default 100 ms (owner); decide per-upstream vs. per-tier
+   override granularity.
 3. Keep `/symbols/…` alias during migration, and for how long?
 4. gzip level after zlib-rs benchmarking (pin a number).
 5. Config-repo location: inside the config dir (`.git` beside the TOMLs,
