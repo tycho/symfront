@@ -177,7 +177,9 @@ stagger = "100ms"
 # A request goes to an upstream only if ALL declared axes admit it.
 #
 # Other keys: priority (lower = earlier tier), nocache (never cache),
-# requires_symbolchecksum, negative_ttl (per-upstream ladder override).
+# requires_symbolchecksum, negative_ttl (per-upstream ladder override), and
+# enabled = false to keep an entry configured (and visible in the UI)
+# without using it.
 
 #[[upstream]]
 #name = "microsoft"

@@ -1,37 +1,30 @@
-//! Unauthenticated read-only symbol serving at `/symbols/<path>` — the plain
-//! HTTP layout dbghelp/symsrv clients expect, mapped onto the store root.
+//! Read-only file serving for symbol payloads — used by tier 0 (the managed
+//! store) and by proxy cache hits in standalone mode.
 //!
 //! Supports HEAD, single byte ranges, ETag/Last-Modified conditionals, and
-//! on-the-fly gzip (skipped for range requests and already-CAB-compressed
-//! `*_` payloads). No directory listings. `000Admin/`, `refs.ptr`, and our
-//! scratch files are never served: they aren't part of the client protocol
-//! and leak transaction history / original build paths.
-//!
-//! Local misses can be forwarded to upstream symbol servers and proxied
-//! through transparently (old symsrv builds don't follow HTTP redirects
-//! reliably, so we never redirect).
+//! negotiated compression (zstd preferred, gzip fallback; never for
+//! already-CAB-compressed `*_` payloads, range responses, or bodies under
+//! the configured floor). No directory listings. `000Admin/`, `refs.ptr`,
+//! and our scratch files are never served: they aren't part of the client
+//! protocol and leak transaction history / original build paths.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use axum::body::Body;
-use axum::extract::{Path as AxPath, State};
 use axum::http::{header, HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
+use symfront_proxy::config::CompressionConfig;
 use tokio_util::io::ReaderStream;
 
-use crate::web::App;
-
-const GZIP_MIN_SIZE: u64 = 1024;
-
-fn plain(status: StatusCode, msg: &'static str) -> Response {
+pub(crate) fn plain(status: StatusCode, msg: &'static str) -> Response {
     (status, msg).into_response()
 }
 
 /// Validate and resolve a request path inside the store, case-insensitively
 /// (dbghelp requests whatever case the debuggee's headers produced; the disk
 /// has whatever case symstore wrote).
-fn resolve(root: &Path, rel: &str) -> Option<PathBuf> {
+pub(crate) fn resolve(root: &Path, rel: &str) -> Option<PathBuf> {
     let mut clean: Vec<&str> = Vec::new();
     for comp in rel.split('/') {
         if comp.is_empty() || comp == "." || comp == ".." || comp.contains('\\') {
@@ -82,8 +75,21 @@ fn resolve(root: &Path, rel: &str) -> Option<PathBuf> {
 }
 
 fn etag_of(md: &std::fs::Metadata) -> String {
-    use std::os::unix::fs::MetadataExt;
-    format!("\"{:x}-{:x}-{:x}\"", md.ino(), md.mtime(), md.len())
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        format!("\"{:x}-{:x}-{:x}\"", md.ino(), md.mtime(), md.len())
+    }
+    #[cfg(not(unix))]
+    {
+        let mtime = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("\"{:x}-{:x}\"", mtime, md.len())
+    }
 }
 
 fn content_type(path: &Path) -> &'static str {
@@ -133,42 +139,79 @@ fn parse_range(spec: &str, len: u64) -> Result<Option<(u64, u64)>, ()> {
     }
 }
 
-fn header_str<'h>(headers: &'h HeaderMap, name: header::HeaderName) -> Option<&'h str> {
+pub(crate) fn header_str(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
     headers.get(name).and_then(|v| v.to_str().ok())
 }
 
-pub(crate) async fn serve_symbol(
-    State(state): State<App>,
-    AxPath(rel): AxPath<String>,
-    method: Method,
-    headers: HeaderMap,
-) -> Response {
-    if method != Method::GET && method != Method::HEAD {
-        return plain(StatusCode::METHOD_NOT_ALLOWED, "GET/HEAD only");
+/// Compression negotiated for a response body.
+enum Encoding {
+    Identity,
+    Gzip,
+    Zstd,
+}
+
+fn negotiate_encoding(
+    headers: &HeaderMap,
+    path: &Path,
+    len: u64,
+    ranged: bool,
+    comp: &CompressionConfig,
+) -> Encoding {
+    if ranged || len < comp.min_size {
+        return Encoding::Identity;
     }
-    let Some(path) = resolve(state.store.root(), &rel) else {
-        return miss(&state, &rel, &headers, &method).await;
+    // Never recompress CAB-packed payloads (symstore `*_` names).
+    let cab = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.ends_with('_'))
+        .unwrap_or(false);
+    if cab {
+        return Encoding::Identity;
+    }
+    let accepts = |wanted: &str| {
+        header_str(headers, header::ACCEPT_ENCODING)
+            .map(|v| {
+                v.split(',')
+                    .any(|e| e.trim().split(';').next() == Some(wanted))
+            })
+            .unwrap_or(false)
     };
-    match serve_local(&state, &path, &method, &headers).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            tracing::warn!("serving {}: {e}", path.display());
-            plain(StatusCode::INTERNAL_SERVER_ERROR, "read error")
-        }
+    // zstd first for clients that negotiate it; gzip as the broad fallback.
+    if accepts("zstd") {
+        Encoding::Zstd
+    } else if accepts("gzip") {
+        Encoding::Gzip
+    } else {
+        Encoding::Identity
     }
 }
 
-async fn serve_local(
-    _state: &App,
+/// Optional header overrides for cache-hit serving (validators recorded at
+/// fill time beat filesystem-derived ones).
+#[derive(Default)]
+pub(crate) struct ServeOverrides {
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+/// Serve a file with conditionals, ranges, and negotiated compression.
+pub(crate) async fn serve_file(
     path: &Path,
     method: &Method,
     headers: &HeaderMap,
+    comp: &CompressionConfig,
+    overrides: ServeOverrides,
 ) -> anyhow::Result<Response> {
     let md = tokio::fs::metadata(path).await?;
     let len = md.len();
-    let etag = etag_of(&md);
-    let modified: SystemTime = md.modified()?;
-    let last_modified = httpdate::fmt_http_date(modified);
+    let etag = overrides.etag.unwrap_or_else(|| etag_of(&md));
+    let last_modified = match overrides.last_modified {
+        Some(lm) => lm,
+        None => httpdate::fmt_http_date(md.modified()?),
+    };
+    let modified: SystemTime = httpdate::parse_http_date(&last_modified)
+        .unwrap_or(SystemTime::UNIX_EPOCH);
 
     let mut base = Response::builder()
         .header(header::ETAG, &etag)
@@ -226,18 +269,7 @@ async fn serve_local(
         }
     }
 
-    // gzip only for full-body responses of compressible payloads.
-    let already_cab = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|n| n.ends_with('_'))
-        .unwrap_or(false);
-    let want_gzip = range.is_none()
-        && len >= GZIP_MIN_SIZE
-        && !already_cab
-        && header_str(headers, header::ACCEPT_ENCODING)
-            .map(|v| v.split(',').any(|e| e.trim().split(';').next() == Some("gzip")))
-            .unwrap_or(false);
+    let encoding = negotiate_encoding(headers, path, len, range.is_some(), comp);
 
     let (status, start, count) = match range {
         Some((s, e)) => {
@@ -248,10 +280,10 @@ async fn serve_local(
     };
 
     if *method == Method::HEAD {
-        let base = if want_gzip {
-            base.header(header::CONTENT_ENCODING, "gzip")
-        } else {
-            base.header(header::CONTENT_LENGTH, count)
+        let base = match encoding {
+            Encoding::Gzip => base.header(header::CONTENT_ENCODING, "gzip"),
+            Encoding::Zstd => base.header(header::CONTENT_ENCODING, "zstd"),
+            Encoding::Identity => base.header(header::CONTENT_LENGTH, count),
         };
         return Ok(base.status(status).body(Body::empty())?.into_response());
     }
@@ -262,86 +294,37 @@ async fn serve_local(
         file.seek(std::io::SeekFrom::Start(start)).await?;
     }
     use tokio::io::AsyncReadExt;
-    let limited = file.take(count);
-    if want_gzip {
-        let encoder = async_compression::tokio::bufread::GzipEncoder::with_quality(
-            tokio::io::BufReader::new(limited),
-            async_compression::Level::Fastest,
-        );
-        Ok(base
-            .status(status)
-            .header(header::CONTENT_ENCODING, "gzip")
-            .body(Body::from_stream(ReaderStream::new(encoder)))?
-            .into_response())
-    } else {
-        Ok(base
+    let limited = tokio::io::BufReader::with_capacity(1 << 20, file.take(count));
+    match encoding {
+        Encoding::Gzip => {
+            let encoder = async_compression::tokio::bufread::GzipEncoder::with_quality(
+                limited,
+                async_compression::Level::Precise(comp.gzip_level as i32),
+            );
+            Ok(base
+                .status(status)
+                .header(header::CONTENT_ENCODING, "gzip")
+                .body(Body::from_stream(ReaderStream::new(encoder)))?
+                .into_response())
+        }
+        Encoding::Zstd => {
+            let encoder = async_compression::tokio::bufread::ZstdEncoder::with_quality(
+                limited,
+                async_compression::Level::Precise(comp.zstd_level),
+            );
+            Ok(base
+                .status(status)
+                .header(header::CONTENT_ENCODING, "zstd")
+                .body(Body::from_stream(ReaderStream::new(encoder)))?
+                .into_response())
+        }
+        Encoding::Identity => Ok(base
             .status(status)
             .header(header::CONTENT_LENGTH, count)
-            .body(Body::from_stream(ReaderStream::new(limited)))?
-            .into_response())
+            .body(Body::from_stream(ReaderStream::with_capacity(
+                limited,
+                1 << 20,
+            )))?
+            .into_response()),
     }
-}
-
-/// Local miss: try upstream symbol servers in order, proxying the response
-/// through (no redirects — symsrv clients don't follow them reliably).
-async fn miss(state: &App, rel: &str, headers: &HeaderMap, method: &Method) -> Response {
-    if state.upstreams.is_empty() {
-        return plain(StatusCode::NOT_FOUND, "file not found");
-    }
-    for upstream in &state.upstreams {
-        let mut url = match reqwest::Url::parse(upstream) {
-            Ok(u) => u,
-            Err(_) => continue,
-        };
-        {
-            let Ok(mut segs) = url.path_segments_mut() else {
-                continue;
-            };
-            segs.pop_if_empty().extend(rel.split('/'));
-        }
-        let client = &state.http_client;
-        let mut req = match *method {
-            Method::HEAD => client.head(url.clone()),
-            _ => client.get(url.clone()),
-        };
-        // Pass ranges through; keep the transfer identity-encoded so lengths
-        // and ranges stay meaningful end to end.
-        if let Some(range) = header_str(headers, header::RANGE) {
-            req = req.header(header::RANGE, range);
-        }
-        req = req.header(header::ACCEPT_ENCODING, "identity");
-        match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                tracing::debug!("upstream hit: {url}");
-                let status = StatusCode::from_u16(resp.status().as_u16())
-                    .unwrap_or(StatusCode::OK);
-                let mut builder = Response::builder().status(status);
-                for name in [
-                    header::CONTENT_LENGTH,
-                    header::CONTENT_TYPE,
-                    header::CONTENT_RANGE,
-                    header::LAST_MODIFIED,
-                    header::ETAG,
-                    header::ACCEPT_RANGES,
-                ] {
-                    if let Some(v) = resp.headers().get(&name) {
-                        builder = builder.header(name, v.clone());
-                    }
-                }
-                builder = builder.header("x-symfront-upstream", upstream.as_str());
-                let body = Body::from_stream(resp.bytes_stream());
-                match builder.body(body) {
-                    Ok(r) => return r.into_response(),
-                    Err(_) => continue,
-                }
-            }
-            Ok(resp) => {
-                tracing::debug!("upstream {url}: {}", resp.status());
-            }
-            Err(e) => {
-                tracing::warn!("upstream {upstream} unreachable: {e}");
-            }
-        }
-    }
-    plain(StatusCode::NOT_FOUND, "file not found (upstreams missed too)")
 }

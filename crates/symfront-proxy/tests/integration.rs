@@ -161,6 +161,7 @@ impl Fake {
 fn upstream(name: &str, base: &str) -> Upstream {
     Upstream {
         name: name.into(),
+        enabled: true,
         base_url: base.into(),
         layout: LayoutKind::Symstore,
         binformat: [Family::Pe].into_iter().collect(),
@@ -646,4 +647,20 @@ async fn blacklist_and_unclassifiable_reject_without_traffic() {
     assert_eq!(fetch(&engine, "/nonsense-no-extension").await.0, 404);
     assert!(fake.state.hits.lock().unwrap().is_empty(), "no upstream traffic");
     assert_eq!(engine.stats.rejected.load(std::sync::atomic::Ordering::Relaxed), 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn disabled_upstream_is_never_used() {
+    let fake = Fake::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut u = upstream("parked", &fake.base_url());
+    u.enabled = false;
+    let engine = engine_with(dir.path(), test_config(dir.path()), vec![u]);
+    fake.set(PDB, Reply::Body(b"should never be seen".to_vec()));
+
+    assert_eq!(fetch(&engine, PDB).await.0, 404);
+    assert_eq!(fake.hits(PDB), 0, "disabled upstream must receive no traffic");
+    // Still present in the engine's config (for the admin UI).
+    assert_eq!(engine.upstreams.len(), 1);
+    assert!(!engine.upstreams[0].enabled);
 }

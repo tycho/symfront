@@ -6,11 +6,16 @@ license.workspace = true
 
 [dependencies]
 symfront-ident = { path = "../symfront-ident" }
+symfront-proxy = { path = "../symfront-proxy" }
 symfront-store = { path = "../symfront-store" }
 anyhow = "1"
 git2 = { version = "0.20", default-features = false }
 argon2 = "0.5"
-async-compression = { version = "0.4", features = ["tokio", "gzip"] }
+async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }
+# Pin flate2 to the zlib-rs backend (order-of-magnitude faster than stock
+# zlib); async-compression picks it up through feature unification.
+flate2 = { version = "1", features = ["zlib-rs"] }
+futures-util = { version = "0.3", default-features = false }
 httpdate = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "blocking", "json"] }
 tokio-util = { version = "0.7", features = ["io"] }

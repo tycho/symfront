@@ -19,6 +19,9 @@ use crate::query::{render, Family, LayoutKind, Role, SymbolQuery};
 #[derive(Clone, Debug)]
 pub struct Upstream {
     pub name: String,
+    /// Disabled upstreams stay configured (and visible in the admin UI)
+    /// but are never admitted, fanned out to, or probed.
+    pub enabled: bool,
     pub base_url: String,
     pub layout: LayoutKind,
     pub binformat: HashSet<Family>,
@@ -42,6 +45,9 @@ impl Upstream {
 
     /// Whether this upstream could plausibly hold the requested artifact.
     pub fn accepts(&self, query: &SymbolQuery) -> bool {
+        if !self.enabled {
+            return false;
+        }
         if !self.binformat.contains(&query.family) {
             return false;
         }

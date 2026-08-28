@@ -141,7 +141,7 @@ pub fn login(server: &str) -> Result<()> {
     };
     let c = client()?;
     let resp = c
-        .post(format!("{}/api/login", norm(server)))
+        .post(format!("{}/admin/api/login", norm(server)))
         .json(&json!({ "username": username, "password": password }))
         .send()?;
     let (resp, body) = {
@@ -163,7 +163,7 @@ pub fn login(server: &str) -> Result<()> {
             .and_then(|v| v.as_str())
             .context("malformed server response")?;
         let resp = c
-            .post(format!("{}/api/login/totp", norm(server)))
+            .post(format!("{}/admin/api/login/totp", norm(server)))
             .json(&json!({ "login_token": login_token, "code": code }))
             .send()?;
         let status = resp.status();
@@ -211,7 +211,7 @@ pub fn logout(server: &str) -> Result<()> {
             let _ = post(
                 server,
                 &Credentials::Session(s.to_string()),
-                "/api/logout",
+                "/admin/api/logout",
                 &json!({}),
             );
         }
@@ -226,7 +226,7 @@ pub fn logout(server: &str) -> Result<()> {
 // ---------- read commands ----------
 
 pub fn status(server: &str, creds: &Credentials) -> Result<()> {
-    let s = get(server, creds, "/api/summary")?;
+    let s = get(server, creds, "/admin/api/summary")?;
     println!("server:       {}", norm(server));
     println!("store:        {}", s["store"].as_str().unwrap_or("?"));
     println!(
@@ -252,7 +252,7 @@ pub fn search(server: &str, creds: &Credentials, query: &str, limit: usize) -> R
     let s = get(
         server,
         creds,
-        &format!("/api/search?q={}&limit={limit}", urlenc(query)),
+        &format!("/admin/api/search?q={}&limit={limit}", urlenc(query)),
     )?;
     let hits = s["hits"].as_array().cloned().unwrap_or_default();
     if hits.is_empty() {
@@ -274,7 +274,7 @@ pub fn search(server: &str, creds: &Credentials, query: &str, limit: usize) -> R
 }
 
 pub fn tx_list(server: &str, creds: &Credentials, all: bool) -> Result<()> {
-    let s = get(server, creds, "/api/transactions")?;
+    let s = get(server, creds, "/admin/api/transactions")?;
     println!(
         "{:>10}  {:<10} {:>7}  {:>10} {:>10}  {:<28} {}",
         "id", "date", "entries", "apparent", "exclusive", "product", "version"
@@ -301,7 +301,7 @@ pub fn tx_list(server: &str, creds: &Credentials, all: bool) -> Result<()> {
 }
 
 pub fn tx_show(server: &str, creds: &Credentials, id: TransactionId) -> Result<()> {
-    let t = get(server, creds, &format!("/api/transactions/{}", id.0))?;
+    let t = get(server, creds, &format!("/admin/api/transactions/{}", id.0))?;
     println!("transaction {id}");
     println!("  product: {}", t["record"]["product"].as_str().unwrap_or("—"));
     println!("  version: {}", t["record"]["version"].as_str().unwrap_or(""));
@@ -341,7 +341,7 @@ pub fn tx_del(
     let c = client()?;
     let resp = apply_creds(
         c.delete(format!(
-            "{}/api/transactions/{}?dry_run={dry_run}",
+            "{}/admin/api/transactions/{}?dry_run={dry_run}",
             norm(server),
             id.0
         )),
@@ -400,7 +400,7 @@ pub fn upload(
     let begin = post(
         server,
         creds,
-        "/api/upload/begin",
+        "/admin/api/upload/begin",
         &json!({ "product": product, "version": version, "comment": comment }),
     )?;
     let upload_id = begin["upload_id"]
@@ -416,7 +416,7 @@ pub fn upload(
     let check_resp = post(
         server,
         creds,
-        &format!("/api/upload/{upload_id}/check"),
+        &format!("/admin/api/upload/{upload_id}/check"),
         &check_body,
     )?;
     let present = check_resp["present"].as_array().cloned().unwrap_or_default();
@@ -454,7 +454,7 @@ pub fn upload(
                     let file = std::fs::File::open(&c.path)?;
                     let resp = apply_creds(
                         http.post(format!(
-                            "{}/api/upload/{upload_id}/file?name={}&hash={}&source={}",
+                            "{}/admin/api/upload/{upload_id}/file?name={}&hash={}&source={}",
                             norm(server),
                             urlenc(&c.name),
                             urlenc(&c.hash),
@@ -498,7 +498,7 @@ pub fn upload(
     let commit = post(
         server,
         creds,
-        &format!("/api/upload/{upload_id}/commit"),
+        &format!("/admin/api/upload/{upload_id}/commit"),
         &commit_body,
     )?;
     let job = commit["job"].as_u64().context("malformed server response")?;
@@ -518,7 +518,7 @@ pub fn upload(
 
 fn wait_for_job(server: &str, creds: &Credentials, job: u64) -> Result<Value> {
     loop {
-        let j = get(server, creds, &format!("/api/jobs/{job}"))?;
+        let j = get(server, creds, &format!("/admin/api/jobs/{job}"))?;
         match j["state"].as_str() {
             Some("running") => {
                 let p = &j["progress"];
@@ -558,7 +558,7 @@ fn urlenc(s: &str) -> String {
 }
 
 pub fn strays(server: &str, creds: &Credentials, prune: bool, dry_run: bool) -> Result<()> {
-    let s = match get(server, creds, "/api/strays") {
+    let s = match get(server, creds, "/admin/api/strays") {
         Ok(s) => s,
         Err(e) if e.to_string().contains("scan not finished") => {
             println!("server scan still running; try again shortly");
@@ -606,7 +606,7 @@ pub fn strays(server: &str, creds: &Credentials, prune: bool, dry_run: bool) -> 
         let r = post(
             server,
             creds,
-            "/api/strays/prune",
+            "/admin/api/strays/prune",
             &json!({ "all": true, "dry_run": dry_run }),
         )?;
         if dry_run {
@@ -632,7 +632,7 @@ pub fn strays(server: &str, creds: &Credentials, prune: bool, dry_run: bool) -> 
 }
 
 pub fn check(server: &str, creds: &Credentials) -> Result<()> {
-    let d = get(server, creds, "/api/check")?;
+    let d = get(server, creds, "/admin/api/check")?;
     let mut rows: Vec<Value> = d["admin"].as_array().cloned().unwrap_or_default();
     let deep_ran = !d["deep"].is_null();
     rows.extend(d["deep"].as_array().cloned().unwrap_or_default());

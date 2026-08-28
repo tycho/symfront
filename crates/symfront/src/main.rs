@@ -3,6 +3,8 @@ mod cli;
 mod cli_auth;
 mod config;
 mod config_store;
+mod pipeline;
+mod proxy_admin;
 mod remote;
 mod symbols;
 mod totp;
@@ -73,15 +75,11 @@ enum Command {
         /// and X-Forwarded-Proto: https marks session cookies Secure.
         #[arg(long, env = "SYMFRONT_TRUSTED_PROXIES")]
         trusted_proxies: Option<usize>,
-        /// Serve the store read-only (no browsing) at /symbols/ for
-        /// dbghelp/symsrv HTTP clients. Always unauthenticated.
+        /// Serve only the symbol pipeline: no admin UI/API/auth. The store
+        /// (if present) is tier 0, read-only; the proxy config comes from
+        /// the config tree.
         #[arg(long)]
-        serve_symbols: bool,
-        /// With --serve-symbols: forward local misses to this upstream symbol
-        /// server and proxy the response through (repeatable, tried in order).
-        /// Example: --upstream https://msdl.microsoft.com/download/symbols
-        #[arg(long)]
-        upstream: Vec<String>,
+        proxy_only: bool,
     },
     /// Create an empty symbol store at --store (000Admin/ and pingme.txt).
     Init,
@@ -290,8 +288,7 @@ fn main() -> anyhow::Result<()> {
             auth_db,
             webauthn_origin,
             trusted_proxies,
-            serve_symbols,
-            upstream,
+            proxy_only,
         } => web::serve(web::ServeOptions {
             store,
             listen: listen
@@ -303,8 +300,7 @@ fn main() -> anyhow::Result<()> {
             trusted_proxies: trusted_proxies
                 .or(cfg.server.trusted_proxies)
                 .unwrap_or(0),
-            serve_symbols,
-            upstreams: upstream,
+            proxy_only,
             config_dir: cfg.dir.clone(),
         }),
         Command::Init => cli::init(&store),

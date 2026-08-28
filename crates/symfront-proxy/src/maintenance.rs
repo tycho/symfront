@@ -219,6 +219,9 @@ impl ProxyEngine {
             let Some(upstream) = self.upstreams.iter().find(|u| u.name == name) else {
                 continue;
             };
+            if !upstream.enabled {
+                continue;
+            }
             let ok = self
                 .probe_base(&upstream.base_url)
                 .await;

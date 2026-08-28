@@ -152,9 +152,8 @@ pub(crate) struct AppState {
     pub(crate) auth: Option<Arc<AuthState>>,
     /// Trusted reverse-proxy hop count for X-Forwarded-For / -Proto.
     pub(crate) trusted_proxies: usize,
-    /// Upstream symbol servers tried (in order) on /symbols misses.
-    pub(crate) upstreams: Vec<String>,
-    pub(crate) http_client: reqwest::Client,
+    /// The symbol-serving pipeline (tier 0 + proxy engine).
+    pub(crate) proxy: Arc<crate::pipeline::ProxyState>,
 }
 
 pub(crate) type App = Arc<AppState>;
@@ -271,6 +270,33 @@ fn spawn_job(
         }
         state.scan.lock().unwrap().result = None;
         spawn_scan(state);
+    });
+    id
+}
+
+/// Run an async workload (proxy maintenance) as a background job with the
+/// same lifecycle/SSE surface as the thread-based store jobs.
+pub(crate) fn spawn_async_job<F>(state: App, kind: &'static str, target: String, work: F) -> u64
+where
+    F: std::future::Future<Output = anyhow::Result<serde_json::Value>> + Send + 'static,
+{
+    let id = state.next_job_id.fetch_add(1, Ordering::Relaxed);
+    let job = Arc::new(Job {
+        id,
+        kind,
+        target,
+        progress: OpProgress::default(),
+        state: Mutex::new(JobState::Running),
+        finished_at: Mutex::new(None),
+    });
+    state.jobs.lock().unwrap().push(Arc::clone(&job));
+    tokio::spawn(async move {
+        let result = work.await;
+        *job.state.lock().unwrap() = match result {
+            Ok(v) => JobState::Done(v),
+            Err(e) => JobState::Failed(format!("{e:#}")),
+        };
+        *job.finished_at.lock().unwrap() = Some(SystemTime::now());
     });
     id
 }
@@ -426,13 +452,15 @@ async fn auth_middleware(State(state): State<App>, mut req: Request, next: Next)
         return next.run(req).await;
     }
     let path = req.uri().path().to_string();
-    // The SPA shell, the login flows, "who am I", and public symbol serving
-    // are reachable unauthenticated.
-    if path == "/"
-        || path == "/api/me"
-        || path == "/api/login"
-        || path.starts_with("/api/login/")
-        || path.starts_with("/symbols/")
+    // Everything outside /admin is public: root-mounted symbol serving,
+    // /metrics, the root redirect. Inside /admin, the SPA shell, the login
+    // flows, and "who am I" are reachable unauthenticated.
+    if !path.starts_with("/admin")
+        || path == "/admin"
+        || path == "/admin/"
+        || path == "/admin/api/me"
+        || path == "/admin/api/login"
+        || path.starts_with("/admin/api/login/")
     {
         return next.run(req).await;
     }
@@ -445,7 +473,7 @@ async fn auth_middleware(State(state): State<App>, mut req: Request, next: Next)
     };
     // Account and admin management require a web session: API tokens are
     // scoped to the symbol-store API and grant no account access.
-    if path.starts_with("/api/account") || path.starts_with("/api/admin") {
+    if path.starts_with("/admin/api/account") || path.starts_with("/admin/api/admin") {
         if !ctx.via_session {
             return (
                 StatusCode::FORBIDDEN,
@@ -453,7 +481,7 @@ async fn auth_middleware(State(state): State<App>, mut req: Request, next: Next)
             )
                 .into_response();
         }
-        if path.starts_with("/api/admin") && ctx.user.role != Role::Admin {
+        if path.starts_with("/admin/api/admin") && ctx.user.role != Role::Admin {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({ "error": "admin role required" })),
@@ -462,7 +490,7 @@ async fn auth_middleware(State(state): State<App>, mut req: Request, next: Next)
         }
     } else {
         let mutating = req.method() == Method::DELETE
-            || (req.method() == Method::POST && path != "/api/logout");
+            || (req.method() == Method::POST && path != "/admin/api/logout");
         if mutating && !ctx.user.role.can_mutate() {
             return (
                 StatusCode::FORBIDDEN,
@@ -574,8 +602,9 @@ pub struct ServeOptions {
     pub auth_db: Option<PathBuf>,
     pub webauthn_origin: Option<String>,
     pub trusted_proxies: usize,
-    pub serve_symbols: bool,
-    pub upstreams: Vec<String>,
+    /// Serve only the symbol pipeline: no admin UI/API, store read-only as
+    /// tier 0 (or absent for a pure cache node).
+    pub proxy_only: bool,
     /// Present when a config tree exists; enables git-backed history.
     pub config_dir: Option<PathBuf>,
 }
@@ -589,8 +618,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         auth_db,
         webauthn_origin,
         trusted_proxies,
-        serve_symbols,
-        upstreams,
+        proxy_only,
         config_dir,
     } = opts;
     // Capture any out-of-band config edits in history before we run with
@@ -656,6 +684,48 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             "trusting {trusted_proxies} reverse-proxy hop(s) for X-Forwarded-For / X-Forwarded-Proto"
         );
     }
+    // Tier 1: the proxy engine, from the config tree. A malformed config is
+    // fatal — the server must not come up half-configured.
+    let engine = match &config_dir {
+        Some(dir) => crate::pipeline::build_engine(dir)?,
+        None => None,
+    };
+
+    // --proxy-only: no admin UI/API/auth; the store (if present) serves as
+    // read-only tier 0.
+    if proxy_only {
+        let store = match Store::open(&store_path) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(
+                    "no managed store at {} ({e}); serving as a pure cache node",
+                    store_path.display()
+                );
+                None
+            }
+        };
+        let proxy = Arc::new(crate::pipeline::ProxyState {
+            store,
+            engine: RwLock::new(engine),
+            config_dir,
+        });
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        crate::pipeline::spawn_background(Arc::clone(&proxy), Arc::clone(&shutdown_flag));
+        spawn_sighup_reload(Arc::clone(&proxy));
+        let app = Router::new()
+            .route("/metrics", get(crate::pipeline::metrics))
+            .route("/symbols/{*path}", get(crate::pipeline::serve_symbols_alias))
+            .fallback(crate::pipeline::serve_root)
+            .with_state(Arc::clone(&proxy));
+        let shutdown = async {
+            let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("shutting down");
+        };
+        serve_app(app, &listen, uds.as_deref(), shutdown).await?;
+        shutdown_flag.store(true, Ordering::Relaxed);
+        return Ok(());
+    }
+
     let store = Store::open(&store_path)?;
     tracing::info!("loading index for {}", store.root().display());
     let index = Arc::new(StoreIndex::load(&store)?);
@@ -664,6 +734,11 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         index.transactions.len(),
         index.entries.len()
     );
+    let proxy = Arc::new(crate::pipeline::ProxyState {
+        store: Some(store.clone()),
+        engine: RwLock::new(engine),
+        config_dir,
+    });
     let state: App = Arc::new(AppState {
         store,
         index: RwLock::new(index),
@@ -676,13 +751,13 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         last_self_mutation: Mutex::new(None),
         auth,
         trusted_proxies,
-        upstreams: if serve_symbols { upstreams } else { Vec::new() },
-        http_client: reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::limited(4))
-            .build()?,
+        proxy: Arc::clone(&proxy),
     });
     crate::web_upload::restore_staging_sessions(&state);
     spawn_scan(Arc::clone(&state));
+    let bg_stop = Arc::new(AtomicBool::new(false));
+    crate::pipeline::spawn_background(Arc::clone(&proxy), Arc::clone(&bg_stop));
+    spawn_sighup_reload(Arc::clone(&proxy));
     // Keep the watcher alive for the whole server lifetime.
     let _watcher = match spawn_admin_watcher(Arc::clone(&state)) {
         Ok(w) => Some(w),
@@ -692,20 +767,10 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         }
     };
 
-    let mut app = Router::new()
-        .route("/", get(|| async { Html(include_str!("ui/index.html")) }));
-    if serve_symbols {
-        tracing::info!(
-            "serving symbols at /symbols/ (public read-only){}",
-            if state.upstreams.is_empty() {
-                String::new()
-            } else {
-                format!(", forwarding misses to {}", state.upstreams.join(", "))
-            }
-        );
-        app = app.route("/symbols/{*path}", get(crate::symbols::serve_symbol));
-    }
-    let app = app
+    // The admin surface lives under /admin/; the SPA uses relative api/
+    // paths, so it must be served at the trailing-slash form.
+    let admin = Router::new()
+        .route("/", get(admin_shell))
         .route("/api/summary", get(summary))
         .route("/api/events", get(events))
         .route("/api/transactions", get(tx_list))
@@ -751,11 +816,43 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         .route("/api/admin/users/{name}/role", post(web_account::admin_set_role))
         .route("/api/admin/users/{name}/password", post(web_account::admin_set_password))
         .route("/api/admin/users/{name}/reset-2fa", post(web_account::admin_reset_2fa))
+        .route("/api/proxy/stats", get(crate::proxy_admin::proxy_stats))
+        .route("/api/proxy/upstreams/{name}/suspend", post(crate::proxy_admin::suspend_upstream))
+        .route("/api/proxy/upstreams/{name}/resume", post(crate::proxy_admin::resume_upstream))
+        .route("/api/proxy/cache/search", get(crate::proxy_admin::cache_search))
+        .route("/api/proxy/cache/entry/{key}", delete(crate::proxy_admin::cache_delete_entry))
+        .route("/api/proxy/cache/evict", post(crate::proxy_admin::cache_evict_matching))
+        .route("/api/proxy/evict", post(crate::proxy_admin::run_eviction))
+        .route("/api/proxy/scrub", post(crate::proxy_admin::run_scrub))
+        .route("/api/admin/config/reload", post(crate::proxy_admin::config_reload))
+        .route("/api/admin/config/log", get(crate::proxy_admin::config_log))
+        .route("/api/admin/config/diff", get(crate::proxy_admin::config_diff))
+        .route("/api/admin/config/rollback", post(crate::proxy_admin::config_rollback))
+        // SPA-style fallback: unknown non-API /admin paths (incl. the bare
+        // "/admin/" form, which nest doesn't route to "/") get the shell.
+        .fallback(admin_shell);
+
+    // Root: symbol pipeline + metrics; /admin: the UI/API. Assemble as
+    // fully-stated routers so the two state types can coexist.
+    let root: Router<()> = Router::new()
+        .route(
+            "/",
+            get(|| async { axum::response::Redirect::temporary("/admin/") }),
+        )
+        .route("/metrics", get(crate::pipeline::metrics))
+        .route("/symbols/{*path}", get(crate::pipeline::serve_symbols_alias))
+        // nest() maps "/admin" to the nested "/" but leaves "/admin/"
+        // unmatched; the SPA needs the trailing-slash form (relative api/
+        // paths), so route it explicitly.
+        .route("/admin/", get(admin_shell))
+        .fallback(crate::pipeline::serve_root)
+        .with_state(Arc::clone(&proxy));
+    let app = root
+        .nest("/admin", admin.with_state(Arc::clone(&state)))
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
             auth_middleware,
-        ))
-        .with_state(Arc::clone(&state));
+        ));
 
     let shutdown_state = Arc::clone(&state);
     let shutdown = async move {
@@ -770,8 +867,30 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
             std::process::exit(130);
         });
     };
+    serve_app(app, &listen, uds.as_deref(), shutdown).await?;
+    bg_stop.store(true, Ordering::Relaxed);
+    finish_shutdown(&state).await
+}
+
+/// The /admin SPA shell. The UI addresses its API with relative `api/...`
+/// paths, so it only works at the trailing-slash form; bounce `/admin`.
+async fn admin_shell(uri: axum::extract::OriginalUri) -> Response {
+    if uri.0.path().ends_with('/') {
+        Html(include_str!("ui/index.html")).into_response()
+    } else {
+        axum::response::Redirect::temporary("/admin/").into_response()
+    }
+}
+
+/// Bind and serve on UDS (Unix) or TCP with graceful shutdown.
+async fn serve_app(
+    app: Router,
+    listen: &str,
+    uds: Option<&std::path::Path>,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> anyhow::Result<()> {
     #[cfg(unix)]
-    if let Some(sock) = &uds {
+    if let Some(sock) = uds {
         // Behind a local reverse proxy: no TCP peer, so the client IP comes
         // from X-Forwarded-For (with trusted_proxies > 0) or is "unknown".
         match std::fs::remove_file(sock) {
@@ -787,7 +906,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         axum::serve(listener, app.into_make_service())
             .with_graceful_shutdown(shutdown)
             .await?;
-        return finish_shutdown(&state).await;
+        return Ok(());
     }
     #[cfg(not(unix))]
     if uds.is_some() {
@@ -800,9 +919,29 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-        .with_graceful_shutdown(shutdown)
-        .await?;
-    finish_shutdown(&state).await
+    .with_graceful_shutdown(shutdown)
+    .await?;
+    Ok(())
+}
+
+/// Reload the config tree (and swap the proxy engine) on SIGHUP.
+fn spawn_sighup_reload(proxy: Arc<crate::pipeline::ProxyState>) {
+    #[cfg(unix)]
+    tokio::spawn(async move {
+        let Ok(mut hup) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+        else {
+            return;
+        };
+        while hup.recv().await.is_some() {
+            tracing::info!("SIGHUP: reloading configuration");
+            if let Err(e) = crate::pipeline::reload(&proxy) {
+                tracing::error!("config reload failed: {e:#}");
+            }
+        }
+    });
+    #[cfg(not(unix))]
+    let _ = proxy;
 }
 
 /// Let any in-flight mutation finish rather than dying mid-delete

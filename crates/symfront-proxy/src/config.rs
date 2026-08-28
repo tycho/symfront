@@ -261,6 +261,8 @@ struct RawUpstream {
     provides: Option<Vec<Role>>,
     extensions: Option<Vec<String>>,
     priority: Option<i32>,
+    /// Keep the entry (and show it in the UI) but don't use it.
+    enabled: Option<bool>,
     #[serde(default)]
     nocache: bool,
     #[serde(default)]
@@ -396,6 +398,7 @@ pub fn upstreams_from_file(path: &Path) -> Result<Vec<Upstream>, ConfigError> {
                 .extensions
                 .map(|v| v.into_iter().map(|e| e.to_ascii_lowercase()).collect()),
             priority: u.priority.unwrap_or(10),
+            enabled: u.enabled.unwrap_or(true),
             nocache: u.nocache,
             requires_symbolchecksum: u.requires_symbolchecksum,
             negative_ttl: match u.negative_ttl {
