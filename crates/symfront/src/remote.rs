@@ -663,3 +663,136 @@ pub fn check(server: &str, creds: &Credentials) -> Result<()> {
     }
     Ok(())
 }
+
+// ---------- proxy ----------
+
+fn wait_job(server: &str, creds: &Credentials, job: u64) -> Result<Value> {
+    loop {
+        let j = get(server, creds, &format!("/admin/api/jobs/{job}"))?;
+        match j["state"].as_str().unwrap_or("") {
+            "done" => return Ok(j["outcome"].clone()),
+            "failed" => bail!("job failed: {}", j["error"].as_str().unwrap_or("?")),
+            _ => std::thread::sleep(std::time::Duration::from_millis(500)),
+        }
+    }
+}
+
+pub fn proxy_stats(server: &str, creds: &Credentials) -> Result<()> {
+    let s = get(server, creds, "/admin/api/proxy/stats")?;
+    if !s["enabled"].as_bool().unwrap_or(false) {
+        println!("proxy tier is not configured on this server");
+        return Ok(());
+    }
+    let r = &s["requests"];
+    println!("requests:");
+    for key in [
+        "tier0_hits",
+        "cache_hits",
+        "fills",
+        "negative_hits",
+        "passthroughs",
+        "misses",
+        "rejected",
+        "errors",
+    ] {
+        println!("  {key:<15} {}", r[key].as_u64().unwrap_or(0));
+    }
+    let b = &s["bytes"];
+    println!(
+        "bytes: {} from cache, {} from store, {} fetched upstream",
+        crate::cli::human(b["from_cache"].as_u64().unwrap_or(0)),
+        crate::cli::human(b["from_store"].as_u64().unwrap_or(0)),
+        crate::cli::human(b["fetched"].as_u64().unwrap_or(0)),
+    );
+    let saved = s["estimated_seconds_saved"].as_f64().unwrap_or(0.0);
+    if saved > 0.0 {
+        println!("estimated time saved by caching: {saved:.0} s");
+    }
+    if let Some(cache) = s["cache"].as_object() {
+        println!(
+            "cache: {} positive entries ({}), {} negative",
+            cache["positive_entries"].as_u64().unwrap_or(0),
+            crate::cli::human(cache["positive_bytes"].as_u64().unwrap_or(0)),
+            cache["negative_entries"].as_u64().unwrap_or(0),
+        );
+    }
+    println!("\nupstreams:");
+    if let Some(ups) = s["upstreams"].as_object() {
+        for (name, u) in ups {
+            println!(
+                "  {name:<16} fills={} ({}) negatives={} errors={} transport_failures={} throughput={}/s",
+                u["fills"].as_u64().unwrap_or(0),
+                crate::cli::human(u["fill_bytes"].as_u64().unwrap_or(0)),
+                u["negatives"].as_u64().unwrap_or(0),
+                u["errors"].as_u64().unwrap_or(0),
+                u["transport_failures"].as_u64().unwrap_or(0),
+                crate::cli::human(u["throughput_bps"].as_f64().unwrap_or(0.0) as u64),
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn proxy_health(server: &str, creds: &Credentials) -> Result<()> {
+    let s = get(server, creds, "/admin/api/proxy/stats")?;
+    if !s["enabled"].as_bool().unwrap_or(false) {
+        println!("proxy tier is not configured on this server");
+        return Ok(());
+    }
+    let empty = serde_json::Map::new();
+    let configs: std::collections::HashMap<&str, &Value> = s["upstream_config"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|u| u["name"].as_str().map(|n| (n, u)))
+                .collect()
+        })
+        .unwrap_or_default();
+    println!("{:<16} {:<10} {:<10} note", "upstream", "enabled", "state");
+    for (name, h) in s["health"].as_object().unwrap_or(&empty) {
+        let suspended = h["suspended"].as_bool().unwrap_or(false);
+        let enabled = configs
+            .get(name.as_str())
+            .and_then(|c| c["enabled"].as_bool())
+            .unwrap_or(true);
+        let note = h["info"]["cause"].as_str().unwrap_or("").to_string();
+        println!(
+            "{name:<16} {:<10} {:<10} {note}",
+            if enabled { "yes" } else { "no" },
+            if suspended { "suspended" } else { "healthy" },
+        );
+    }
+    Ok(())
+}
+
+pub fn proxy_evict(server: &str, creds: &Credentials) -> Result<()> {
+    let resp = post(server, creds, "/admin/api/proxy/evict", &serde_json::json!({}))?;
+    let job = resp["job"].as_u64().context("no job id in response")?;
+    let outcome = wait_job(server, creds, job)?;
+    println!("{}", serde_json::to_string_pretty(&outcome)?);
+    Ok(())
+}
+
+pub fn proxy_scrub(server: &str, creds: &Credentials, repair: bool) -> Result<()> {
+    let resp = post(
+        server,
+        creds,
+        "/admin/api/proxy/scrub",
+        &serde_json::json!({ "repair": repair }),
+    )?;
+    let job = resp["job"].as_u64().context("no job id in response")?;
+    let outcome = wait_job(server, creds, job)?;
+    println!("{}", serde_json::to_string_pretty(&outcome)?);
+    Ok(())
+}
+
+pub fn config_reload(server: &str, creds: &Credentials) -> Result<()> {
+    let resp = post(
+        server,
+        creds,
+        "/admin/api/admin/config/reload",
+        &serde_json::json!({}),
+    )?;
+    println!("{}", resp["summary"].as_str().unwrap_or("reloaded"));
+    Ok(())
+}

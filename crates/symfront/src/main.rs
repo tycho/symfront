@@ -1,6 +1,7 @@
 mod auth;
 mod cli;
 mod cli_auth;
+mod cli_proxy;
 mod config;
 mod config_store;
 mod pipeline;
@@ -137,6 +138,11 @@ enum Command {
         #[arg(long)]
         deep: bool,
     },
+    /// Caching-proxy operations (cache summary, maintenance, import).
+    Proxy {
+        #[command(subcommand)]
+        command: ProxyCommand,
+    },
     /// Inspect and manage the configuration tree (git-backed history).
     Config {
         #[command(subcommand)]
@@ -161,6 +167,33 @@ enum Command {
 }
 
 #[derive(Subcommand)]
+enum ProxyCommand {
+    /// Cache summary (local) or live request/upstream stats (--server).
+    Stats,
+    /// Upstream health/enabled table (requires --server).
+    Health,
+    /// Run a size-budget eviction pass now.
+    Evict,
+    /// Patrol scrub: cross-check metadata against the data tree.
+    Scrub {
+        /// Only report; don't delete anything.
+        #[arg(long)]
+        report_only: bool,
+    },
+    /// One-shot import of a Python symsrv cache (metadata + payloads).
+    Import {
+        /// The symsrv cache root (containing db/ and storage/data/).
+        from: std::path::PathBuf,
+        /// Copy payload files instead of hardlinking.
+        #[arg(long)]
+        copy: bool,
+        /// Walk and report without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum ConfigCommand {
     /// Create the config directory with a commented starter tree (files that
     /// already exist are left untouched) and initialize its history repo.
@@ -178,6 +211,9 @@ enum ConfigCommand {
     },
     /// Restore the tree to an earlier commit (recorded as a new commit).
     Rollback { rev: String },
+    /// Ask a running server to reload its config tree (requires --server;
+    /// locally, send the server SIGHUP instead).
+    Reload,
 }
 
 #[derive(Subcommand)]
@@ -257,6 +293,20 @@ fn main() -> anyhow::Result<()> {
                 return remote::strays(server, &creds, prune, dry_run)
             }
             Command::Check { deep: _ } => return remote::check(server, &creds),
+            Command::Proxy { command } => match command {
+                ProxyCommand::Stats => return remote::proxy_stats(server, &creds),
+                ProxyCommand::Health => return remote::proxy_health(server, &creds),
+                ProxyCommand::Evict => return remote::proxy_evict(server, &creds),
+                ProxyCommand::Scrub { report_only } => {
+                    return remote::proxy_scrub(server, &creds, !report_only)
+                }
+                ProxyCommand::Import { .. } => {
+                    anyhow::bail!("proxy import is local-only; run it on the server host")
+                }
+            },
+            Command::Config { command: ConfigCommand::Reload } => {
+                return remote::config_reload(server, &creds)
+            }
             _ => anyhow::bail!(
                 "this command is local-only; drop --server or run it on the server host"
             ),
@@ -313,6 +363,19 @@ fn main() -> anyhow::Result<()> {
         Command::Search { query, limit } => cli::search(&store, &query, limit),
         Command::Strays { prune, dry_run } => cli::strays(&store, prune, dry_run),
         Command::Check { deep } => cli::check(&store, deep),
+        Command::Proxy { command } => match command {
+            ProxyCommand::Stats => cli_proxy::stats(&args.config_dir),
+            ProxyCommand::Health => anyhow::bail!(
+                "health is a live-server view; use --server (or SYMFRONT_SERVER)"
+            ),
+            ProxyCommand::Evict => cli_proxy::evict(&args.config_dir),
+            ProxyCommand::Scrub { report_only } => {
+                cli_proxy::scrub(&args.config_dir, !report_only)
+            }
+            ProxyCommand::Import { from, copy, dry_run } => {
+                cli_proxy::import(&args.config_dir, &from, copy, dry_run)
+            }
+        },
         Command::Config { command } => match command {
             ConfigCommand::Init => cli::config_init(&args.config_dir),
             ConfigCommand::Log { limit } => cli::config_log(&args.config_dir, limit),
@@ -320,6 +383,9 @@ fn main() -> anyhow::Result<()> {
                 cli::config_diff(&args.config_dir, from.as_deref(), to.as_deref())
             }
             ConfigCommand::Rollback { rev } => cli::config_rollback(&args.config_dir, &rev),
+            ConfigCommand::Reload => anyhow::bail!(
+                "config reload needs --server (or send the local server SIGHUP)"
+            ),
         },
         Command::User { auth_db, command } => cli_auth::user(&auth_db, command),
         Command::Token { auth_db, command } => cli_auth::token(&auth_db, command),
