@@ -2029,6 +2029,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "symfront-proxy"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures-util",
+ "httpdate",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
 name = "symfront-store"
 version = "0.1.0"
 dependencies = [

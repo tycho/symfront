@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/symfront-ident", "crates/symfront-store", "crates/symfront"]
+members = ["crates/symfront-ident", "crates/symfront-store", "crates/symfront-proxy", "crates/symfront"]
 resolver = "2"
 
 [workspace.package]
