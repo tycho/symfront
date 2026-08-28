@@ -276,8 +276,8 @@ pub fn search(server: &str, creds: &Credentials, query: &str, limit: usize) -> R
 pub fn tx_list(server: &str, creds: &Credentials, all: bool) -> Result<()> {
     let s = get(server, creds, "/admin/api/transactions")?;
     println!(
-        "{:>10}  {:<10} {:>7}  {:>10} {:>10}  {:<28} {}",
-        "id", "date", "entries", "apparent", "exclusive", "product", "version"
+        "{:>10}  {:<10} {:>7}  {:>10} {:>10}  {:<28} version",
+        "id", "date", "entries", "apparent", "exclusive", "product"
     );
     for t in s["transactions"].as_array().cloned().unwrap_or_default() {
         let active = t["active"].as_bool().unwrap_or(false);

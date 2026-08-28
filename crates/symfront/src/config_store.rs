@@ -170,3 +170,68 @@ impl ConfigStore {
         self.commit_all(author, &format!("rollback to {short}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_semantics() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.toml"), "x = 1\n").unwrap();
+        let store = ConfigStore::open(dir.path()).unwrap();
+        // Pre-existing content is captured as the initial commit.
+        assert_eq!(store.log(10).unwrap().len(), 1);
+        assert!(!store.is_dirty().unwrap());
+
+        // An attributed edit commits as that author.
+        std::fs::write(dir.path().join("a.toml"), "x = 2\n").unwrap();
+        store.commit_all("alice", "edit a.toml via web UI").unwrap();
+        let log = store.log(10).unwrap();
+        assert_eq!(log[0].author, "alice");
+
+        // Out-of-band drift is auto-committed, once.
+        std::fs::write(dir.path().join("a.toml"), "x = 3\n").unwrap();
+        assert!(store.commit_drift().unwrap().is_some());
+        assert!(store.commit_drift().unwrap().is_none());
+        assert_eq!(store.log(10).unwrap()[0].message, "manual edit (out-of-band)");
+
+        // Deletions are drift too.
+        std::fs::write(dir.path().join("b.toml"), "y = 1\n").unwrap();
+        store.commit_all("alice", "add b").unwrap();
+        std::fs::remove_file(dir.path().join("b.toml")).unwrap();
+        assert!(store.commit_drift().unwrap().is_some());
+
+        // Rollback restores an earlier tree as a NEW commit; the rev means
+        // what the log showed even with uncommitted edits present.
+        let target = store.log(10).unwrap()[1].id.clone(); // "add b" state
+        std::fs::write(dir.path().join("a.toml"), "x = 999\n").unwrap(); // drift
+        store.rollback("bob", &target).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.toml")).unwrap(),
+            "x = 3\n"
+        );
+        assert!(dir.path().join("b.toml").exists());
+        let log = store.log(10).unwrap();
+        assert!(log[0].message.starts_with("rollback to"));
+        assert_eq!(log[0].author, "bob");
+        // The pre-rollback drift survives in history.
+        assert_eq!(log[1].message, "manual edit (out-of-band)");
+        assert!(!store.is_dirty().unwrap());
+    }
+
+    #[test]
+    fn diff_modes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.toml"), "x = 1\n").unwrap();
+        let store = ConfigStore::open(dir.path()).unwrap();
+        assert_eq!(store.diff(None, None).unwrap(), "");
+        std::fs::write(dir.path().join("a.toml"), "x = 2\n").unwrap();
+        let d = store.diff(None, None).unwrap();
+        assert!(d.contains("-x = 1") && d.contains("+x = 2"), "{d}");
+        store.commit_all("alice", "bump").unwrap();
+        let log = store.log(10).unwrap();
+        let d = store.diff(Some(&log[1].id), Some(&log[0].id)).unwrap();
+        assert!(d.contains("+x = 2"), "{d}");
+    }
+}

@@ -352,7 +352,7 @@ fn add_transaction_roundtrip() {
     .unwrap();
     fs::write(src.join("notes.txt"), b"not a symbol file").unwrap();
 
-    let (candidates, skipped) = symfront_ident::collect(&[src.clone()]).unwrap();
+    let (candidates, skipped) = symfront_ident::collect(std::slice::from_ref(&src)).unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(skipped.len(), 1);
 

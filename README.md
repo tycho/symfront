@@ -1,184 +1,254 @@
 # symfront
 
-Management service for a Windows NT symbol store (`symstore.exe`-compatible
-layout) living on a Linux host. One binary provides both a CLI and a web
-UI/HTTP API.
+A complete symbol-server front end for a POSIX host, in one binary:
 
-## Layout
+- **Managed store** — a Windows NT symbol store (`symstore.exe`-compatible
+  layout) with transactional add/delete, scanning, stray detection, and
+  consistency checks. Served read-only to debuggers as **tier 0** of the
+  pipeline.
+- **Caching proxy** — the Rust successor to
+  [symsrv](https://github.com/tycho/symsrv): local misses fan out to
+  configurable upstream symbol servers (Microsoft, vendor stores,
+  debuginfod instances, …) with write-through caching, negative caching,
+  health breaking, and singleflight.
+- **Admin UI + API** — a single-page web UI at `/admin/` with live jobs,
+  upload, proxy dashboard, and a git-backed configuration editor; the same
+  surface is scriptable over HTTP and mirrored by the CLI.
 
-- `crates/symfront-core` — store model and operations: admin-record parsing
-  (`history.txt`, `server.txt`, `lastid.txt`, transaction manifests,
-  `refs.ptr`), physical tree scanning with apparent-vs-on-disk sizes, stray
-  detection, consistency checks, and symstore-compatible transactional delete.
-- `crates/symfront` — the `symfront` binary: CLI subcommands plus `serve`
-  (axum server with an embedded single-page UI).
+Symbol serving owns the URL root, so every client type — `symsrv.dll` /
+WinDbg, Ghidra, Sentry-style SSQP, native `debuginfod` — points at the
+bare server URL.
 
-## Usage
+## Crates
 
-The store path defaults to `/srv/symstore`; override with `--store` or
-`SYMFRONT_STORE`.
+- `crates/symfront-ident` — file identification and store hashing: PE
+  (TimeDateStamp+SizeOfImage), MSF 7 PDB (GUID+Age from the DBI stream),
+  portable PDB (GUID+`FFFFFFFF`). By content, not extension. Tiny, pure,
+  usable by third parties.
+- `crates/symfront-store` — the symstore format: admin-record parsing
+  (`history.txt`, `server.txt`, manifests, `refs.ptr`), tree scanning with
+  apparent-vs-on-disk sizes, strays, checks, and symstore-compatible
+  transactional operations.
+- `crates/symfront-proxy` — the caching-proxy engine: request
+  classification, upstream admission, cache backend, fan-out, TTL policy,
+  eviction and scrub. No HTTP-server or UI dependencies.
+- `crates/symfront` — the binary: axum server (pipeline at `/`, admin at
+  `/admin/`), auth, jobs/SSE, CLI, remote client.
+
+## Configuration
+
+Everything lives in one transplantable directory of TOML files (default
+`/etc/symfront`, override with `--config-dir` / `SYMFRONT_CONFIG_DIR`);
+CLI flags override the tree, and a missing tree means flag-only operation:
+
+```
+/etc/symfront/
+  server.toml      # listen (tcp/uds), trusted proxies, auth db, webauthn, log filter
+  store.toml       # managed store path
+  proxy.toml       # cache path/size/mode, TTLs, health, stagger, compression
+  upstreams.toml   # [[upstream]] entries
+  blacklist.toml   # requests rejected before any classification
+```
+
+`symfront config init` emits a commented starter tree. The directory is a
+local git repository (bundled libgit2; no system git needed): every web-UI
+edit is a commit authored as the logged-in user, and out-of-band manual
+edits are auto-committed as drift before any reload or save — a hand edit
+can never be silently lost. `symfront config log|diff|rollback` (and the
+same in the admin UI) browse and restore history.
+
+Hot reload: `SIGHUP`, `POST /admin/api/admin/config/reload`, or
+`symfront config reload --server …`. Upstreams, blacklists, and proxy
+settings apply immediately; listen-address changes need a restart.
+
+## The serving pipeline
+
+`GET`/`HEAD` on any path outside `/admin/` and `/metrics`:
+
+1. `/pingme.txt` → 200 (client health checks).
+2. **Tier 0 — the managed store**: cheap stat + case-insensitive resolve
+   (clients request whatever case the debuggee's headers produced). If we
+   own a copy, we serve it — before any blacklist or classification.
+   `000Admin/`, `refs.ptr`, and scratch files are never served.
+3. **Tier 1 — the proxy**: blacklist → classify → candidate upstreams →
+   cache → live fan-out.
+
+`GET /` redirects to `/admin/`; `/symbols/…` remains as a temporary alias
+for migrating clients. `serve --proxy-only` runs the bare pipeline with no
+admin/auth surface (store read-only as tier 0, or absent for a pure cache
+node) — same binary, separate systemd instance.
+
+### Classification and layouts
+
+Inbound requests are parsed into a layout-independent query by two
+layouts: **debuginfod** (`/buildid/<hex>/{debuginfo,executable,source/…}`,
+strict) and **symstore** (`/<name>/<id>/<name>`, the general fallback,
+including SSQP `elf-buildid[-sym]-<hex>` / `mach-uuid[-sym]-<hex>` id
+markers). Each configured upstream admits a query through three axes —
+`binformat` (pe/elf/macho), `provides` (image/debug), `extensions` — and
+renders it in its own layout. Symstore URLs pass through verbatim (stable
+cache keys); debuginfod renders canonically from the decoded build-id, so
+a Sentry-style SSQP request and a native debuginfod request **converge on
+one cache entry**. Behavior is pinned by 435 golden vectors generated from
+the Python implementation.
+
+### Cache semantics
+
+- Keys are `sha256(full upstream URL)` — per-upstream, and identical to
+  symsrv's keying, which is what makes `symfront proxy import` a lossless
+  migration.
+- Metadata in SQLite (WAL; the file stays inspectable with plain
+  `sqlite3`), payloads in a sharded data tree. Reads are inline on the
+  handler; all writes flow through one dedicated writer thread — batched
+  access-time/expiry touches, commit-gated fill upserts.
+- **Positive TTLs slide** on every hit. An expired positive entry is
+  **revalidated, not discarded**: conditional GET; 304 refreshes the TTL
+  with no re-download; transport failure serves the stale copy
+  (stale-while-error).
+- **Negative caching follows an escalating ladder** (default
+  `1h,1h,1h,8h,8h,24h,7d`; per-upstream override): each re-confirmed miss
+  advances a step, so late-appearing symbols (fresh Windows patches on
+  msdl) are re-probed quickly without hammering anything.
+- **Fills are write-through + tail-follow**: one fill task per key pumps
+  upstream → cache temp file as fast as network and disk allow; every
+  client — the requester and any singleflight followers arriving mid-fill —
+  tails the growing file at its own pace. A slow client backpressures
+  nobody; a disconnecting client changes nothing (the fill commits
+  anyway). Completion is atomic rename + metadata commit.
+- **HEAD upgrades to a GET fill** on a miss: the client gets headers as
+  soon as upstream headers arrive, the body fill finishes in the
+  background, and probe-heavy clients warm the cache instead of bypassing
+  it.
+- **Fan-out is staggered by priority tier**: tier N+1 launches
+  `stagger` (default 100 ms) after tier N *starts* — or immediately once
+  the pipeline drains — and the first 200 wins globally. A slow upstream
+  can no longer add its full timeout to worst-case latency.
+- **Health breaker**: trips only on transport-level failure (never on any
+  complete HTTP response, 5xx included). Suspended upstreams still serve
+  cache hits but leave the fan-out; background HEAD probes restore them on
+  any complete response. 4xx are negative-cached; 5xx pass through and are
+  never cached.
+- **Eviction** enforces `cache.size` between watermarks, dropping
+  soonest-expiring positive entries first (with sliding TTLs this
+  approximates LRU while staying trivially explainable). A **patrol
+  scrub** cross-checks metadata against the data tree in both directions.
+  Both run scheduled and on demand (UI job or CLI).
+- Upstream entries can be parked with `enabled = false`: kept in config
+  and visible in the UI, never queried.
+
+### Serving details
+
+HEAD, single byte ranges, `ETag`/`Last-Modified` conditionals, and
+negotiated compression: zstd first for clients that offer it, gzip
+fallback (zlib-rs backend), never for CAB-packed `*_` payloads, range
+responses, or bodies under the floor (default 4 KiB). Cache hits can
+alternatively be offloaded to nginx via `X-Accel-Redirect`
+(`mode = "nginx"`), trading per-response stats for sendfile.
+
+## Observability
+
+- `/metrics` — Prometheus text format.
+- `GET /admin/api/proxy/stats` — JSON: request outcomes, bytes by source,
+  estimated time saved, per-upstream fills/errors/throughput EMA, health,
+  cache totals.
+- Statistics are **client-truth**: counted per incoming request (tier-0
+  hit / cache hit / fill / negative hit / passthrough / miss / rejected /
+  error); probe traffic never pollutes them.
+- The admin **Proxy** tab shows all of the above live, plus upstream
+  suspend/resume, cache entry search/evict, a "forget matching 404s"
+  purge (for just-published symbols), and one-click eviction/scrub jobs.
+
+## CLI
+
+Store management (local against `--store`, or remote against `--server`):
 
 ```console
-$ symfront serve --listen 127.0.0.1:8710   # web UI + JSON API
-$ symfront status                          # quick summary from admin records
-$ symfront tx list [--all] [--sizes]       # transactions (--sizes walks the tree)
-$ symfront tx show 719                     # per-entry sizes, sources, sharing
-$ symfront tx del 719 [--dry-run] [-y]     # delete like `symstore del`
-$ symfront search clang-cl                 # name substring / hash prefix / source path
-$ symfront strays [--prune] [--dry-run]    # files no active transaction accounts for
-$ symfront check [--deep]                  # consistency checks (exit 1 on errors)
+$ symfront serve [--listen 127.0.0.1:8710 | --uds /run/symfront/http.sock] [--proxy-only]
+$ symfront status | tx list|show|del | search | strays | check | upload | init
 ```
 
-The web API mirrors the CLI: `GET /api/summary`, `/api/transactions[/{id}]`,
-`DELETE /api/transactions/{id}?dry_run=`, `/api/search?q=`, `/api/strays`,
-`POST /api/strays/prune`, `/api/check`, `POST /api/scan`.
-
-## Semantics worth knowing
-
-- **Sizes**: "apparent" is the sum of `st_size` (what `du
-  --apparent-size` reports); "on disk" is `st_blocks * 512` (what plain `du`
-  reports — with ZFS compression these differ a lot). Per-transaction views
-  also report the *exclusive* size: what deleting that transaction would
-  actually free, given hash dirs shared with other transactions via
-  `refs.ptr` refcounts.
-- **Delete** mirrors `symstore del`: drop the transaction's line from each
-  referenced dir's `refs.ptr`; remove payload + dir when the last reference
-  goes; rename the manifest to `.deleted`; rewrite `server.txt`; bump
-  `lastid.txt`; append a `del` record to `history.txt`. All admin rewrites are
-  atomic (temp file + rename), mutations hold an flock
-  (`000Admin/.symfront.lock`), and a journal file marks in-flight deletes so
-  `check` can flag an interrupted one (re-running the delete finishes it).
-- **Strays** are files no *active* transaction manifest accounts for:
-  wholly-unreferenced hash dirs, unexpected files inside referenced dirs, and
-  files outside the `<name>/<HASH>/` structure. Missing payloads (recorded
-  but absent) are reported separately as integrity errors, never pruned.
-- The file formats are written back the way `symstore.exe` writes them
-  (CRLF, unterminated final lines, zero-padded ids) so the store stays
-  usable by Windows tooling.
-- **Coexistence with symstore.exe**: the server watches `000Admin/` with
-  inotify, so transactions added/deleted by other tools are picked up
-  automatically (index reload + rescan, debounced). An external add in
-  progress shows as strays/incomplete until its commit lands in
-  `000Admin/` — it converges once the other tool finishes. Only the admin
-  dir is watched; the payload tree would need a watch per hash dir.
-- Web mutations (delete, prune) run as background jobs server-side: they
-  keep running if the browser disconnects, progress streams to all
-  connected pages over SSE (`/api/events`), and Ctrl-C waits for running
-  jobs to finish (press it twice to force).
-
-## Serving symbols to debuggers (optional)
-
-`serve --serve-symbols` exposes the store read-only at `/symbols/` in the
-plain HTTP layout dbghelp/symsrv/Ghidra expect: HEAD, byte ranges,
-ETag/Last-Modified conditionals, on-the-fly gzip (skipped for ranges and
-already-CAB-compressed `*_` payloads), and case-insensitive path
-resolution (clients request whatever case the debuggee's headers
-produced). No directory listings; `000Admin/`, `refs.ptr`, and scratch
-files are never served. `/symbols/` is always unauthenticated — that is
-the "unauthenticated" tier of the role model.
-
-`--upstream <url>` (repeatable) forwards local misses to upstream symbol
-servers and proxies the response through — no HTTP redirects, since old
-symsrv builds don't follow them reliably:
+Proxy and config:
 
 ```console
-$ symfront init --store /tmp/scratch-store    # ad-hoc store, ready to serve
-$ symfront serve --store /tmp/scratch-store --serve-symbols \
-    --upstream https://msdl.microsoft.com/download/symbols
+$ symfront proxy stats            # cache summary (local) or live counters (--server)
+$ symfront proxy health --server …
+$ symfront proxy evict|scrub [--report-only]
+$ symfront proxy import /srv/cache/ntsymbols/data [--copy] [--dry-run]
+$ symfront config init|log|diff|rollback
+$ symfront config reload --server …
 ```
 
-### Behind nginx
+`symfront proxy import` migrates a Python symsrv cache wholesale:
+identical keying, rows mapped into the new schema, payloads hardlinked
+(or copied across datasets).
 
-The UI uses relative URLs, so it works under any path prefix without
-configuration — e.g. management at `/admin/` with nginx serving symbols
-itself:
+## Store semantics worth knowing
 
-```nginx
-location /admin/ { proxy_pass http://127.0.0.1:8710/; }   # trailing / strips the prefix
-location /symbols/ { root /srv/symstore; ... }            # or let symfront serve them
-```
+- **Sizes**: "apparent" is `st_size` (`du --apparent-size`); "on disk" is
+  `st_blocks * 512` — with ZFS compression these differ a lot.
+  Per-transaction views also report the *exclusive* size: what deleting
+  that transaction would actually free given `refs.ptr` sharing.
+- **Delete** mirrors `symstore del` exactly (refcount decrement, `.deleted`
+  manifest rename, `server.txt` rewrite, `del` history record). Admin
+  rewrites are atomic, mutations hold an flock, and a journal makes an
+  interrupted delete detectable and resumable.
+- File formats are written back the way `symstore.exe` writes them (CRLF,
+  unterminated final lines, zero-padded ids); hashing and layout are
+  byte-compatible, verified against real `symstore.exe` output.
+- **Coexistence**: `000Admin/` is inotify-watched, so transactions
+  added/deleted by other tools (e.g. symstore.exe over SMB) are picked up
+  automatically.
+- Web mutations run as background jobs that survive browser disconnects;
+  progress streams to every connected page over SSE.
 
-Combine with `--trusted-proxies 1` so audit logs see real client IPs.
-
-## Authentication (optional)
-
-Without `--auth-db` the server is open (bind it to localhost or a trusted
-network). With `--auth-db <path>` (or `SYMFRONT_AUTH_DB`), a small SQLite
-database provides users, web sessions, and API tokens:
-
-```console
-$ export SYMFRONT_AUTH_DB=~/.local/share/symfront/auth.db
-$ symfront user add steven --role admin        # prompts for password
-$ symfront user add ci-bot --role rw --no-password   # token-only headless user
-$ symfront user add viewer --role ro
-$ symfront token create ci-bot --label "ci uploads"  # prints sf_… once
-$ symfront serve
-```
-
-- Roles are strict supersets: unauthenticated (nothing) < `ro`
-  (browse/search) < `rw` (store mutations) < `admin` (user management via
-  the web Admin page or the CLI).
-- Web UI sign-in paths: password (+ TOTP code if enrolled), or a WebAuthn
-  passkey (which skips TOTP). Sessions are HttpOnly cookies (30 days,
-  persisted across restarts; `Secure` when behind a TLS proxy).
-- The Account page self-serves password changes, TOTP enrollment (QR code
-  plus the `otpauth://` URL text for password managers; verification
-  accepts the previous/current/next 30 s step for clock drift), passkey
-  management, and API tokens with a read-only or read-write capability
-  (further capped by the user's role).
-- Headless clients: `Authorization: Bearer sf_…` — tokens are for the
-  symbol-store API only; they can never reach account/admin endpoints or
-  the web UI. Stored hashed, shown exactly once; passwords are argon2id.
-- WebAuthn needs a secure context: it works on `http://localhost` out of
-  the box; anywhere else set `--webauthn-origin https://…` and terminate
-  TLS at a reverse proxy.
-- Reverse proxy: run with `--trusted-proxies 1` behind nginx. Client IPs
-  for audit logs then come from `X-Forwarded-For` (never looking past the
-  trusted depth, so clients can't spoof), and `X-Forwarded-Proto: https`
-  marks cookies `Secure`. With the default of 0 those headers are ignored.
-- No TLS built in: front with a reverse proxy if it leaves localhost.
-
-## Uploading (local or remote)
+## Uploading
 
 ```console
 $ symfront upload ./build/Release --product "My App" --version 1.2.3
-$ symfront --server https://syms.example.com --token sf_… \
-    upload ./build/Release --product "My App" --version 1.2.3
+$ symfront --server https://syms.example.com --token sf_… upload …
 ```
 
-Files are identified by *content*, not extension — every PE flavor
-(exe/dll/sys/ocx/com/…, hashed as TimeDateStamp+SizeOfImage) and MSF 7
-PDBs (GUID+Age) — and land as one atomic transaction. Hashing and the
-on-disk layout (manifests, refs.ptr, history/server records) are
-byte-compatible with `symstore.exe` output, verified against a real
-symstore.exe run and 200+ payloads of an existing store. Remote uploads
-first ask the server which payloads it already has and skip those
-entirely (incremental builds transfer only what changed), then commit
-server-side as a background job that survives client disconnects.
+Content-identified (every PE flavor + MSF 7 / portable PDBs), one atomic
+transaction, incremental (already-present payloads are skipped before any
+bytes move), parallel, and resumable across interruptions and server
+restarts. The web Upload page does the same with drag-and-drop; its
+client-side identifier is a JS port of `symfront-ident` kept honest by a
+node-based drift test against the same fixtures.
 
-The web UI has an Upload page with the same behavior: files are
-identified client-side (headers only, nothing is read fully), payloads
-the store already has are skipped, and the commit runs as a server-side
-job. Drag-and-drop of files and folders is supported.
+## Authentication
 
-Uploads run a few streams in parallel (`--jobs N` on the CLI, 3-wide in
-the browser) and are resumable: staged files persist server-side across
-interruptions and even server restarts, expiring after 24 h of
-inactivity. The CLI resumes implicitly (re-run the same command; staged
-files are skipped); the web UI offers Resume/Discard when it finds a
-previous session.
+Without an auth db the server is open (bind it to localhost). With
+`auth_db` set (server.toml or `--auth-db`):
 
-## Remote CLI
+```console
+$ symfront user --auth-db … add steven --role admin
+$ symfront token --auth-db … create ci-bot --label "ci uploads"
+```
 
-`--server URL` (env `SYMFRONT_SERVER`) switches supported commands to
-the HTTP API: `status`, `search`, `tx list/show/del`, `upload`,
-`strays [--prune]`, and `check`.
-Authentication, in precedence order:
+- Roles: unauthenticated (symbol serving only) < `ro` (browse, stats) <
+  `rw` (store mutations, cache evict/scrub, upstream suspend) < `admin`
+  (users, config editing).
+- Web sign-in: password (+ TOTP if enrolled) or WebAuthn passkey; HttpOnly
+  session cookies. API tokens (`Authorization: Bearer sf_…`) are scoped to
+  the store/proxy API and can never reach account/admin endpoints.
+- Behind nginx set `trusted_proxies = 1` so audit logs see real client
+  IPs and cookies are marked `Secure`. No TLS built in — front with a
+  reverse proxy.
 
-1. `--token` / `SYMFRONT_TOKEN` — an API token; wins over a stored
-   session because tokens have indefinite lifetime (automation keeps
-   working regardless of who is logged in).
-2. A session from `symfront login --server URL` (username + password +
-   TOTP code if enrolled), stored per-server in
-   `~/.config/symfront/sessions.json` (mode 0600). `symfront logout`
-   forgets it.
+## Deployment
+
+`deploy/` holds a translated production config tree, an nginx vhost
+example (including the X-Accel internal location), a hardened systemd
+unit (`ExecReload` sends SIGHUP), and `docs/deployment.md` — the runbook
+for migrating off Python symsrv: import the cache, parallel-run on a beta
+vhost, benchmark against the Python instance (regressions block cutover),
+then move the main vhost over and retire the raw-autoindex private vhost.
+
+## Testing
+
+`cargo test --workspace`: store-format round-trips against symstore.exe
+fixtures; 435 layout golden vectors from the Python proxy; a fake-upstream
+integration suite (fills, singleflight collapse, ladder progression,
+revalidation/stale-while-error, health trip/probe/restore, stagger racing,
+disconnect-commit, HEAD upgrade, eviction order, scrub repair); config
+git-history semantics; and the JS ident drift guard (skips without node).

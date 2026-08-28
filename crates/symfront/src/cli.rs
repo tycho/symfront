@@ -199,9 +199,9 @@ pub fn tx_list(store_path: &Path, all: bool, sizes: bool) -> anyhow::Result<()> 
     };
 
     if sizes {
-        println!("{:>10}  {:<10} {:>7}  {:>10} {:>10} {:>10}  {:<28} {}", "id", "date", "entries", "apparent", "on-disk", "exclusive", "product", "version");
+        println!("{:>10}  {:<10} {:>7}  {:>10} {:>10} {:>10}  {:<28} version", "id", "date", "entries", "apparent", "on-disk", "exclusive", "product");
     } else {
-        println!("{:>10}  {:<10} {:>7}  {:<28} {}", "id", "date", "entries", "product", "version");
+        println!("{:>10}  {:<10} {:>7}  {:<28} version", "id", "date", "entries", "product");
     }
     for t in index.transactions.values() {
         let active = t.is_active();
@@ -293,7 +293,7 @@ pub fn tx_show(store_path: &Path, id: TransactionId) -> anyhow::Result<()> {
     let mut total_disk = 0u64;
     let mut missing = 0usize;
     println!();
-    println!("{:>12} {:>12}  {}", "apparent", "on-disk", "path");
+    println!("{:>12} {:>12}  path", "apparent", "on-disk");
     for e in &entries {
         let dir = store.hash_dir(&e.name, &e.hash);
         let (mut size, mut disk, mut found) = (0u64, 0u64, false);

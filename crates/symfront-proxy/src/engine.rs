@@ -301,9 +301,8 @@ impl ProxyEngine {
         let entry = cand.prior.as_ref().expect("reval candidate has an entry");
         if !self.health.is_available(&cand.upstream.name) {
             // Can't ask: serve stale rather than stall.
-            return self.serve_entry(entry.clone()).map(|o| {
+            return self.serve_entry(entry.clone()).inspect(|_| {
                 self.stats.count(RequestOutcome::CacheHit);
-                o
             });
         }
         // Singleflight: concurrent expiries revalidate once; the rest ride
@@ -319,9 +318,8 @@ impl ProxyEngine {
                             upstream: cand.upstream.name.clone(),
                         })
                     }
-                    FlightOutcome::Refreshed => self.serve_entry(entry.clone()).map(|o| {
+                    FlightOutcome::Refreshed => self.serve_entry(entry.clone()).inspect(|_| {
                         self.stats.count(RequestOutcome::CacheHit);
-                        o
                     }),
                     FlightOutcome::Status(s) if (400..500).contains(&s) => None,
                     _ => self.serve_stale(entry),
@@ -359,9 +357,8 @@ impl ProxyEngine {
             self.cache.touch_positive(entry, &self.config.ttl);
             tracing::debug!("revalidated {} via 304", cand.key.full_url);
             slot.publish(FlightOutcome::Refreshed);
-            return self.serve_entry(entry.clone()).map(|o| {
+            return self.serve_entry(entry.clone()).inspect(|_| {
                 self.stats.count(RequestOutcome::CacheHit);
-                o
             });
         }
         if status == 200 {
