@@ -144,15 +144,18 @@ pub(crate) fn header_str(headers: &HeaderMap, name: header::HeaderName) -> Optio
 }
 
 /// Compression negotiated for a response body.
-enum Encoding {
+pub(crate) enum Encoding {
     Identity,
     Gzip,
     Zstd,
 }
 
-fn negotiate_encoding(
+/// Negotiate a body encoding for `name` (just the filename, for the CAB
+/// check). `len` may be a `u64::MAX` sentinel when the size is unknown
+/// (streaming fills without an upstream Content-Length).
+pub(crate) fn negotiate_encoding(
     headers: &HeaderMap,
-    path: &Path,
+    name: &str,
     len: u64,
     ranged: bool,
     comp: &CompressionConfig,
@@ -161,12 +164,7 @@ fn negotiate_encoding(
         return Encoding::Identity;
     }
     // Never recompress CAB-packed payloads (symstore `*_` names).
-    let cab = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|n| n.ends_with('_'))
-        .unwrap_or(false);
-    if cab {
+    if name.ends_with('_') {
         return Encoding::Identity;
     }
     let accepts = |wanted: &str| {
@@ -285,7 +283,8 @@ pub(crate) async fn serve_file(
         }
     }
 
-    let encoding = negotiate_encoding(headers, path, len, range.is_some(), comp);
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let encoding = negotiate_encoding(headers, name, len, range.is_some(), comp);
 
     let (status, start, count) = match range {
         Some((s, e)) => {
@@ -312,28 +311,6 @@ pub(crate) async fn serve_file(
     use tokio::io::AsyncReadExt;
     let limited = tokio::io::BufReader::with_capacity(1 << 20, file.take(count));
     match encoding {
-        Encoding::Gzip => {
-            let encoder = async_compression::tokio::bufread::GzipEncoder::with_quality(
-                limited,
-                async_compression::Level::Precise(comp.gzip_level as i32),
-            );
-            Ok(base
-                .status(status)
-                .header(header::CONTENT_ENCODING, "gzip")
-                .body(Body::from_stream(ReaderStream::new(encoder)))?
-                .into_response())
-        }
-        Encoding::Zstd => {
-            let encoder = async_compression::tokio::bufread::ZstdEncoder::with_quality(
-                limited,
-                async_compression::Level::Precise(comp.zstd_level),
-            );
-            Ok(base
-                .status(status)
-                .header(header::CONTENT_ENCODING, "zstd")
-                .body(Body::from_stream(ReaderStream::new(encoder)))?
-                .into_response())
-        }
         Encoding::Identity => Ok(base
             .status(status)
             .header(header::CONTENT_LENGTH, count)
@@ -342,5 +319,41 @@ pub(crate) async fn serve_file(
                 1 << 20,
             )))?
             .into_response()),
+        enc => Ok(compressed_body(base.status(status), limited, &enc, comp)?),
     }
+}
+
+/// Finish a response by compressing `reader` per `encoding` (Gzip/Zstd;
+/// Identity is the caller's job — it knows the Content-Length). The body
+/// goes out chunked: the compressed size is unknowable up front.
+pub(crate) fn compressed_body<R>(
+    base: axum::http::response::Builder,
+    reader: R,
+    encoding: &Encoding,
+    comp: &CompressionConfig,
+) -> Result<Response, axum::http::Error>
+where
+    R: tokio::io::AsyncBufRead + Send + 'static,
+{
+    Ok(match encoding {
+        Encoding::Gzip => base
+            .header(header::CONTENT_ENCODING, "gzip")
+            .body(Body::from_stream(ReaderStream::new(
+                async_compression::tokio::bufread::GzipEncoder::with_quality(
+                    reader,
+                    async_compression::Level::Precise(comp.gzip_level as i32),
+                ),
+            )))?
+            .into_response(),
+        Encoding::Zstd => base
+            .header(header::CONTENT_ENCODING, "zstd")
+            .body(Body::from_stream(ReaderStream::new(
+                async_compression::tokio::bufread::ZstdEncoder::with_quality(
+                    reader,
+                    async_compression::Level::Precise(comp.zstd_level),
+                ),
+            )))?
+            .into_response(),
+        Encoding::Identity => unreachable!("identity handled by the caller"),
+    })
 }

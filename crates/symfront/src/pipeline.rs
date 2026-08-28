@@ -264,13 +264,14 @@ async fn serve_path(
             .map(|s| s.to_string()),
     };
     let outcome = engine.handle(request).await;
-    render_outcome(&engine, outcome, &method, headers, &comp).await
+    render_outcome(&engine, outcome, &method, &path, headers, &comp).await
 }
 
 async fn render_outcome(
     engine: &Arc<ProxyEngine>,
     outcome: Outcome,
     method: &Method,
+    path: &str,
     headers: &HeaderMap,
     comp: &CompressionConfig,
 ) -> Response {
@@ -335,6 +336,7 @@ async fn render_outcome(
             let mut b = Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/octet-stream")
+                .header(header::VARY, "Accept-Encoding")
                 .header("x-symfront-upstream", upstream);
             if let Some(etag) = &handle.meta.etag {
                 b = b.header(header::ETAG, etag);
@@ -342,10 +344,10 @@ async fn render_outcome(
             if let Some(lm) = &handle.meta.last_modified {
                 b = b.header(header::LAST_MODIFIED, lm);
             }
-            if let Some(cl) = handle.meta.content_length {
-                b = b.header(header::CONTENT_LENGTH, cl);
-            }
             if *method == Method::HEAD {
+                if let Some(cl) = handle.meta.content_length {
+                    b = b.header(header::CONTENT_LENGTH, cl);
+                }
                 // §3.4: headers now; the fill finishes with no tailing
                 // clients and warms the cache for the GET that follows.
                 return b.body(Body::empty()).unwrap().into_response();
@@ -358,7 +360,34 @@ async fn render_outcome(
                     Err(e) => Some((Err(e), reader)),
                 }
             });
-            b.body(Body::from_stream(stream)).unwrap().into_response()
+            // Compress to this client while the pump writes raw bytes to
+            // disk. Each tailing client wraps its own reader, so encoder
+            // cost never throttles the fill or other followers; an
+            // unknown upstream length compresses unconditionally.
+            let encoding = symbols::negotiate_encoding(
+                headers,
+                path.rsplit('/').next().unwrap_or(""),
+                handle.meta.content_length.unwrap_or(u64::MAX),
+                false,
+                comp,
+            );
+            match encoding {
+                symbols::Encoding::Identity => {
+                    if let Some(cl) = handle.meta.content_length {
+                        b = b.header(header::CONTENT_LENGTH, cl);
+                    }
+                    b.body(Body::from_stream(stream)).unwrap().into_response()
+                }
+                enc => {
+                    use futures_util::StreamExt;
+                    let raw = tokio_util::io::StreamReader::new(
+                        stream.map(|r| r.map(axum::body::Bytes::from)),
+                    );
+                    symbols::compressed_body(b, raw, &enc, comp)
+                        .unwrap()
+                        .into_response()
+                }
+            }
         }
         Outcome::Passthrough { response } => {
             let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);

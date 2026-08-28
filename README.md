@@ -141,12 +141,15 @@ the Python implementation.
 HEAD, single byte ranges, `ETag`/`Last-Modified` conditionals, and
 negotiated compression: zstd first for clients that offer it, gzip
 fallback (zlib-rs backend), never for CAB-packed `*_` payloads, range
-responses, or bodies under the floor (default 4 KiB). Cache hits can
-alternatively be offloaded to nginx via `X-Accel-Redirect`
-(`mode = "nginx"`) or to lighttpd via `X-Sendfile` (`mode = "lighttpd"`,
-with `accel_prefix` set to the absolute cache data directory), trading
-per-response stats for sendfile; `accel_store_prefix` extends the
-offload to tier-0 store hits.
+responses, or bodies under the floor (default 4 KiB). Live fills
+compress per-client too — the pump writes raw bytes to disk while each
+tailing client wraps its own reader, so encoding never throttles the
+fill. Cache hits can alternatively be offloaded to nginx via
+`X-Accel-Redirect` (`mode = "nginx"`) or to lighttpd via `X-Sendfile`
+(`mode = "lighttpd"`, with `accel_prefix` set to the absolute cache data
+directory), trading per-response stats for sendfile;
+`accel_store_prefix` extends the offload to tier-0 store hits.
+
 
 ## Observability
 
