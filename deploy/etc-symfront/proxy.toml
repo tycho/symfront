@@ -68,3 +68,11 @@ min_size = 4096
 gzip_level = 6
 zstd_level = 3
 
+[quirks]
+# Ghidra's HTTP client sends no Accept-Encoding but falls back to the CAB
+# name (foo.pd_) on a .pdb miss and expands what it gets. When enabled,
+# requests from that exact client for payloads we already hold are 404'd
+# and served as an on-the-fly MSZIP CAB at the compressed name instead.
+# Off by default: Ghidra builds newer than 11.4 need an external 7-Zip on
+# the analyst machine to expand CABs.
+#ghidra_cab = false

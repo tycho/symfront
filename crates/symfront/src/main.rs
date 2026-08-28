@@ -6,6 +6,7 @@ mod config;
 mod config_store;
 mod pipeline;
 mod proxy_admin;
+mod quirks;
 mod remote;
 mod symbols;
 mod totp;

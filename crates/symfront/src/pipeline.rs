@@ -20,6 +20,7 @@ use symfront_proxy::stats::RequestOutcome;
 use symfront_store::Store;
 
 use crate::config as cfgtree;
+use crate::quirks;
 use crate::symbols::{self, plain, ServeOverrides};
 
 /// Shared serving state for both the combined server and `--proxy-only`.
@@ -212,6 +213,38 @@ async fn serve_path(
         return StatusCode::OK.into_response();
     }
     let comp = state.compression();
+
+    // Client quirks. Ghidra never sends Accept-Encoding but falls back to
+    // the CAB name on a .pdb miss (see quirks.rs): hide payloads we hold
+    // behind a 404 and serve them MSZIP-CAB'd at the compressed name.
+    // Never engages for bodies we don't have — those take the fill path.
+    if let Some(engine) = state.engine() {
+        if engine.config.ghidra_cab_quirk && quirks::is_ghidra_no_accept_encoding(headers) {
+            let store_hit = |p: &str| {
+                state
+                    .store
+                    .as_ref()
+                    .and_then(|s| symbols::resolve(s.root(), p.trim_start_matches('/')))
+            };
+            if let Some((real_path, inner_name)) = quirks::cab_target(&path) {
+                let src = store_hit(&real_path).or_else(|| engine.peek_positive(&real_path));
+                if let Some(src) = src {
+                    engine.stats.count(RequestOutcome::CacheHit);
+                    if let Ok(md) = std::fs::metadata(&src) {
+                        engine
+                            .stats
+                            .bytes_from_cache
+                            .fetch_add(md.len(), Ordering::Relaxed);
+                    }
+                    return quirks::serve_cab(&src, &inner_name, &method).await;
+                }
+            } else if !path.ends_with('_')
+                && (store_hit(&path).is_some() || engine.peek_positive(&path).is_some())
+            {
+                return plain(StatusCode::NOT_FOUND, "file not found");
+            }
+        }
+    }
 
     // Tier 0 — the managed store. Runs before blacklist/classification:
     // if we own a copy, we serve it.

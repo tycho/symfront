@@ -172,6 +172,29 @@ impl ProxyEngine {
         })
     }
 
+    /// Non-filling probe: the on-disk payload path of a positive cache
+    /// entry for `path`, if we hold one. Expired-but-present counts —
+    /// symbol payloads are immutable and callers (the Ghidra CAB quirk)
+    /// must never trigger a fill. Touches nothing: no stats, no TTL
+    /// slide, no revalidation.
+    pub fn peek_positive(&self, path: &str) -> Option<PathBuf> {
+        let query = classify_request(path)?;
+        let mut keys: Vec<[u8; 32]> = Vec::new();
+        for u in &self.upstreams {
+            if !u.cachable() {
+                continue;
+            }
+            if let Some(url) = u.candidate_url(&query) {
+                keys.push(CacheKey::new(&u.name, &url).hash);
+            }
+        }
+        let rows = self.cache.db.get_many(&keys).ok()?;
+        rows.into_iter()
+            .filter(|e| e.is_positive())
+            .map(|e| self.cache.data_path(&e.key))
+            .find(|p| p.is_file())
+    }
+
     pub async fn handle(self: &Arc<Self>, req: ClientRequest<'_>) -> Outcome {
         let path = req.path;
         if self.blacklist.matches(path) {

@@ -150,6 +150,10 @@ fill. Cache hits can alternatively be offloaded to nginx via
 directory), trading per-response stats for sendfile;
 `accel_store_prefix` extends the offload to tier-0 store hits.
 
+The opt-in `[quirks] ghidra_cab` flag handles Ghidra's compression-blind
+HTTP client (no `Accept-Encoding`, but a known `.pd_` fallback on miss):
+payloads we already hold are 404'd at the `.pdb` name and served as an
+on-the-fly MSZIP CAB at the compressed name instead.
 
 ## Observability
 

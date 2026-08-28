@@ -179,6 +179,14 @@ pub struct ProxyConfig {
     /// OS/LAN DNS caches warm so client requests never pay for a cold
     /// recursive lookup (no traffic to the upstream itself). 0 disables.
     pub dns_prewarm_interval: Duration,
+    /// Ghidra's HTTP client sends no Accept-Encoding, so its transfers
+    /// are never compressed — but source inspection shows it falls back
+    /// to the CAB name (`foo.pd_`) on a `.pdb` miss and expands it. This
+    /// quirk 404s `.pdb` requests from that exact client when we already
+    /// hold the payload, then serves an on-the-fly MSZIP CAB for the
+    /// `.pd_` follow-up. Never applies to fills (a first-time fetch
+    /// streams the `.pdb` normally).
+    pub ghidra_cab_quirk: bool,
     pub compression: CompressionConfig,
 }
 
@@ -218,6 +226,7 @@ impl Default for ProxyConfig {
             read_timeout: Duration::from_secs(20),
             min_buildid_hex: 32,
             dns_prewarm_interval: Duration::from_secs(60),
+            ghidra_cab_quirk: false,
             compression: CompressionConfig::default(),
         }
     }
@@ -244,6 +253,14 @@ struct RawProxy {
     dns: RawDns,
     #[serde(default)]
     compression: RawCompression,
+    #[serde(default)]
+    quirks: RawQuirks,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawQuirks {
+    ghidra_cab: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -429,6 +446,9 @@ impl ProxyConfig {
         }
         if let Some(v) = raw.compression.zstd_level {
             cfg.compression.zstd_level = v.clamp(1, 19);
+        }
+        if let Some(v) = raw.quirks.ghidra_cab {
+            cfg.ghidra_cab_quirk = v;
         }
         Ok(cfg)
     }
