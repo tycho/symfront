@@ -27,8 +27,9 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_stream::StreamExt;
 
-use symfront_core::ident::{self, FileKind};
-use symfront_core::ops::{AddFile, AddRequest};
+use symfront_ident as ident;
+use symfront_ident::FileKind;
+use symfront_store::ops::{AddFile, AddRequest};
 
 use crate::web::{spawn_add_job, App, ApiError};
 
@@ -206,7 +207,7 @@ pub(crate) async fn check(
 }
 
 /// Case-insensitive lookup of an existing payload file.
-fn find_store_payload(store: &symfront_core::Store, name: &str, hash: &str) -> Option<PathBuf> {
+fn find_store_payload(store: &symfront_store::Store, name: &str, hash: &str) -> Option<PathBuf> {
     let find_ci = |dir: &std::path::Path, target: &str| -> Option<PathBuf> {
         let exact = dir.join(target);
         if exact.exists() {

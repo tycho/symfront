@@ -6,9 +6,9 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use anyhow::{bail, Context};
-use symfront_core::index::StoreIndex;
-use symfront_core::scan::{self, ScanProgress, ScanResult};
-use symfront_core::{check, ops, strays, Store, TransactionId};
+use symfront_store::index::StoreIndex;
+use symfront_store::scan::{self, ScanProgress, ScanResult};
+use symfront_store::{check, ops, strays, Store, TransactionId};
 
 pub fn human(bytes: u64) -> String {
     const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
@@ -60,8 +60,8 @@ fn scan_with_progress(store: &Store, deep: bool) -> anyhow::Result<ScanResult> {
 /// Run a mutating op with a live progress line on stderr.
 fn with_op_progress<T>(
     verb: &str,
-    f: impl FnOnce(&ops::OpProgress) -> symfront_core::Result<T>,
-) -> symfront_core::Result<T> {
+    f: impl FnOnce(&ops::OpProgress) -> symfront_store::Result<T>,
+) -> symfront_store::Result<T> {
     let progress = Arc::new(ops::OpProgress::default());
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let ticker = {
@@ -117,7 +117,7 @@ pub fn upload(
     if paths.is_empty() {
         bail!("no paths given");
     }
-    let (candidates, skipped) = symfront_core::ident::collect(paths)?;
+    let (candidates, skipped) = symfront_ident::collect(paths)?;
     for s in &skipped {
         println!("skipped (not a PE or PDB): {}", s.display());
     }
@@ -287,7 +287,7 @@ pub fn tx_show(store_path: &Path, id: TransactionId) -> anyhow::Result<()> {
     }
     println!("  manifest: {:?}, {} entries", t.file_state, t.entry_count);
 
-    let entries = symfront_core::index::load_entries(&store, id)?;
+    let entries = symfront_store::index::load_entries(&store, id)?;
     // Stat just this transaction's dirs rather than walking the whole store.
     let mut total_size = 0u64;
     let mut total_disk = 0u64;

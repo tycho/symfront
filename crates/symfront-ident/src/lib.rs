@@ -15,11 +15,30 @@
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::{Error, Result};
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("{path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    pub fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
+        Error::Io {
+            path: path.into(),
+            source,
+        }
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]

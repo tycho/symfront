@@ -1,15 +1,10 @@
 [package]
-name = "symfront-core"
+name = "symfront-ident"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Identify PE/PDB/portable-PDB files and compute their symbol-store hash"
 
 [dependencies]
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-rayon = "1"
-fs2 = "0.4"
-
-[dev-dependencies]
-tempfile = "3"

@@ -31,12 +31,12 @@ use tokio_stream::StreamExt;
 use crate::auth::{AuthDb, Role, User};
 use crate::web_account;
 
-use symfront_core::check::{self, Finding};
-use symfront_core::index::StoreIndex;
-use symfront_core::ops::{self, OpProgress};
-use symfront_core::scan::{self, ScanProgress, SizeTotals};
-use symfront_core::strays::{self, StrayReport, TxIssues, TxSizes};
-use symfront_core::{Store, TransactionId};
+use symfront_store::check::{self, Finding};
+use symfront_store::index::StoreIndex;
+use symfront_store::ops::{self, OpProgress};
+use symfront_store::scan::{self, ScanProgress, SizeTotals};
+use symfront_store::strays::{self, StrayReport, TxIssues, TxSizes};
+use symfront_store::{Store, TransactionId};
 
 /// Result of a completed scan, condensed (the raw per-dir listing is dropped).
 struct ScanBundle {
@@ -173,14 +173,14 @@ impl From<anyhow::Error> for ApiError {
     }
 }
 
-impl From<symfront_core::Error> for ApiError {
-    fn from(e: symfront_core::Error) -> Self {
+impl From<symfront_store::Error> for ApiError {
+    fn from(e: symfront_store::Error) -> Self {
         let code = match &e {
-            symfront_core::Error::TxNotFound(_) => StatusCode::NOT_FOUND,
-            symfront_core::Error::TxNotActive(..) | symfront_core::Error::Refused(_) => {
+            symfront_store::Error::TxNotFound(_) => StatusCode::NOT_FOUND,
+            symfront_store::Error::TxNotActive(..) | symfront_store::Error::Refused(_) => {
                 StatusCode::CONFLICT
             }
-            symfront_core::Error::Locked => StatusCode::LOCKED,
+            symfront_store::Error::Locked => StatusCode::LOCKED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         ApiError(code, e.to_string())
@@ -189,7 +189,7 @@ impl From<symfront_core::Error> for ApiError {
 
 type ApiResult<T> = std::result::Result<T, ApiError>;
 
-fn reload_index(state: &App) -> symfront_core::Result<Arc<StoreIndex>> {
+fn reload_index(state: &App) -> symfront_store::Result<Arc<StoreIndex>> {
     let index = Arc::new(StoreIndex::load(&state.store)?);
     *state.index.write().unwrap() = Arc::clone(&index);
     state.generation.fetch_add(1, Ordering::Relaxed);
@@ -243,7 +243,7 @@ fn spawn_job(
     state: App,
     kind: &'static str,
     target: String,
-    work: impl FnOnce(&OpProgress) -> symfront_core::Result<serde_json::Value> + Send + 'static,
+    work: impl FnOnce(&OpProgress) -> symfront_store::Result<serde_json::Value> + Send + 'static,
 ) -> u64 {
     let id = state.next_job_id.fetch_add(1, Ordering::Relaxed);
     let job = Arc::new(Job {
@@ -892,14 +892,14 @@ async fn tx_detail(
     let id = TransactionId(id);
     let index = Arc::clone(&state.index.read().unwrap());
     let Some(t) = index.transactions.get(&id) else {
-        return Err(symfront_core::Error::TxNotFound(id).into());
+        return Err(symfront_store::Error::TxNotFound(id).into());
     };
     let t = t.clone();
     let store = state.store.clone();
     // Stat this transaction's dirs on demand (cheap: a few reads per entry).
     let (entries, sharing) = tokio::task::spawn_blocking(
         move || -> ApiResult<(Vec<serde_json::Value>, Vec<serde_json::Value>)> {
-            let entries = symfront_core::index::load_entries(&store, id)?;
+            let entries = symfront_store::index::load_entries(&store, id)?;
             // Set comparison: for each other transaction, how many of our
             // entries' hash dirs it also references.
             let mut share_counts: HashMap<TransactionId, u64> = HashMap::new();
@@ -1022,10 +1022,10 @@ async fn tx_delete(
     {
         let index = state.index.read().unwrap();
         match index.transactions.get(&id) {
-            None => return Err(symfront_core::Error::TxNotFound(id).into()),
+            None => return Err(symfront_store::Error::TxNotFound(id).into()),
             Some(t) if !t.is_active() => {
                 return Err(
-                    symfront_core::Error::TxNotActive(id, "not an active transaction".into())
+                    symfront_store::Error::TxNotActive(id, "not an active transaction".into())
                         .into(),
                 )
             }

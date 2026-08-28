@@ -900,7 +900,7 @@ async function loadCheck() {
 }
 
 /* ---------- upload page ---------- */
-/* IDENT-BEGIN — client-side port of symfront-core's ident (header reads only) */
+/* IDENT-BEGIN — client-side port of symfront-ident (header reads only) */
 async function identifyFile(file) {
   const bytes = async (off, len) => {
     if (off >= file.size) return null;

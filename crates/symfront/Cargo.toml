@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-symfront-core = { path = "../symfront-core" }
+symfront-ident = { path = "../symfront-ident" }
+symfront-store = { path = "../symfront-store" }
 anyhow = "1"
 argon2 = "0.5"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }

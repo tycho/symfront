@@ -4,12 +4,12 @@
 use std::fs;
 use std::path::Path;
 
-use symfront_core::check;
-use symfront_core::index::StoreIndex;
-use symfront_core::ops;
-use symfront_core::scan::{self, ScanProgress};
-use symfront_core::strays;
-use symfront_core::{Store, TransactionId};
+use symfront_store::check;
+use symfront_store::index::StoreIndex;
+use symfront_store::ops;
+use symfront_store::scan::{self, ScanProgress};
+use symfront_store::strays;
+use symfront_store::{Store, TransactionId};
 
 struct Fixture {
     _tmp: tempfile::TempDir,
@@ -196,7 +196,7 @@ fn delete_respects_refcounts() {
 
     // Deleting again fails cleanly.
     let err = ops::delete_transaction(&store, TransactionId(1), false, &ops::OpProgress::default()).unwrap_err();
-    assert!(matches!(err, symfront_core::Error::TxNotActive(..)));
+    assert!(matches!(err, symfront_store::Error::TxNotActive(..)));
 
     // Deleting tx2 empties the store payload side entirely.
     ops::delete_transaction(&store, TransactionId(2), false, &ops::OpProgress::default()).unwrap();
@@ -322,7 +322,7 @@ fn ident_matches_live_store() {
             if !payload.is_file() {
                 continue;
             }
-            match symfront_core::ident::identify(&payload) {
+            match symfront_ident::identify(&payload) {
                 Ok(Some((_kind, hash))) => {
                     assert_eq!(hash, expect, "hash mismatch for {}", payload.display());
                     checked += 1;
@@ -352,7 +352,7 @@ fn add_transaction_roundtrip() {
     .unwrap();
     fs::write(src.join("notes.txt"), b"not a symbol file").unwrap();
 
-    let (candidates, skipped) = symfront_core::ident::collect(&[src.clone()]).unwrap();
+    let (candidates, skipped) = symfront_ident::collect(&[src.clone()]).unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(skipped.len(), 1);
 
@@ -455,8 +455,8 @@ fn pdb_age_uses_dbi_stream() {
         if !path.is_file() {
             continue;
         }
-        let (kind, hash) = symfront_core::ident::identify(&path).unwrap().unwrap();
-        assert_eq!(kind, symfront_core::ident::FileKind::Pdb);
+        let (kind, hash) = symfront_ident::identify(&path).unwrap().unwrap();
+        assert_eq!(kind, symfront_ident::FileKind::Pdb);
         assert_eq!(hash, expect, "{name}");
     }
 }
@@ -493,14 +493,14 @@ fn fixture_inputs_are_pinned() {
         assert_eq!(on_disk, bytes, "{name} drifted from its generator");
         let tmp = tempfile::NamedTempFile::new().unwrap();
         fs::write(tmp.path(), &bytes).unwrap();
-        let (kind, h) = symfront_core::ident::identify(tmp.path()).unwrap().unwrap();
-        assert_eq!(kind, symfront_core::ident::FileKind::Pe);
+        let (kind, h) = symfront_ident::identify(tmp.path()).unwrap().unwrap();
+        assert_eq!(kind, symfront_ident::FileKind::Pe);
         assert_eq!(h, hash, "{name}");
     }
     // Compiled artifacts (clang + lld-link targeting windows-msvc), pinned by
     // identity: a real linker-produced PE + PDB that native dbghelp accepts.
     for (name, hash) in COMPILED_INPUTS {
-        let (_, h) = symfront_core::ident::identify(&dir.join(name)).unwrap().unwrap();
+        let (_, h) = symfront_ident::identify(&dir.join(name)).unwrap().unwrap();
         assert_eq!(h, hash, "{name}");
     }
 }
@@ -524,25 +524,25 @@ fn ident_synthetic() {
     let ghex = fixtures::guid_hex(&guid);
 
     let pe64 = write("x64.exe", &fixtures::minimal_pe(0x11223344, 0xABC00, true));
-    assert_eq!(symfront_core::ident::identify(&pe64).unwrap().unwrap().1, "11223344abc00");
+    assert_eq!(symfront_ident::identify(&pe64).unwrap().unwrap().1, "11223344abc00");
     let pe32 = write("x86.exe", &fixtures::minimal_pe(0x01020304, 0x1000, false));
-    assert_eq!(symfront_core::ident::identify(&pe32).unwrap().unwrap().1, "010203041000");
+    assert_eq!(symfront_ident::identify(&pe32).unwrap().unwrap().1, "010203041000");
 
     // Age mismatch: DBI age (1) must win over info age (3).
     let pdb = write("m.pdb", &fixtures::minimal_msf_pdb(guid, 3, Some(1)));
-    assert_eq!(symfront_core::ident::identify(&pdb).unwrap().unwrap().1, format!("{ghex}1"));
+    assert_eq!(symfront_ident::identify(&pdb).unwrap().unwrap().1, format!("{ghex}1"));
     // No DBI stream: info age is the fallback.
     let pdb2 = write("n.pdb", &fixtures::minimal_msf_pdb(guid, 3, None));
-    assert_eq!(symfront_core::ident::identify(&pdb2).unwrap().unwrap().1, format!("{ghex}3"));
+    assert_eq!(symfront_ident::identify(&pdb2).unwrap().unwrap().1, format!("{ghex}3"));
     // Portable PDB: literal FFFFFFFF.
     let ppdb = write("p.pdb", &fixtures::minimal_portable_pdb(guid));
     assert_eq!(
-        symfront_core::ident::identify(&ppdb).unwrap().unwrap().1,
+        symfront_ident::identify(&ppdb).unwrap().unwrap().1,
         format!("{ghex}FFFFFFFF")
     );
     // Garbage is skipped, not an error.
     let junk = write("junk.bin", b"not a pe or pdb at all");
-    assert!(symfront_core::ident::identify(&junk).unwrap().is_none());
+    assert!(symfront_ident::identify(&junk).unwrap().is_none());
 }
 
 /// The checked-in single-add store produced by real symstore.exe: we must
@@ -558,7 +558,7 @@ fn reference_store_parses_and_hashes_match() {
     assert_eq!(e.name, "symfronttest.exe");
     assert_eq!(e.hash, "5F0000003000");
     let payload = root.join("symfronttest.exe/5F0000003000/symfronttest.exe");
-    let (_, h) = symfront_core::ident::identify(&payload).unwrap().unwrap();
+    let (_, h) = symfront_ident::identify(&payload).unwrap().unwrap();
     assert_eq!(h, e.hash);
     assert!(check::check_admin(&store, &index).unwrap().is_empty());
     let scan = scan::scan(&store, true, &ScanProgress::default()).unwrap();
@@ -582,7 +582,7 @@ fn replay_with_ours(root: &Path) {
                 .iter()
                 .map(|n| {
                     let path = inputs.join(n);
-                    let (kind, hash) = symfront_core::ident::identify(&path).unwrap().unwrap();
+                    let (kind, hash) = symfront_ident::identify(&path).unwrap().unwrap();
                     ops::AddFile {
                         path: path.clone(),
                         name: n.to_string(),
@@ -613,7 +613,7 @@ fn tree_summary(root: &Path) -> Vec<String> {
         for f in &d.files {
             if f.name.eq_ignore_ascii_case("refs.ptr") {
                 let text = fs::read_to_string(root.join(&d.name).join(&d.hash).join(&f.name)).unwrap();
-                let refs: Vec<String> = symfront_core::format::lines(&text)
+                let refs: Vec<String> = symfront_store::format::lines(&text)
                     .map(|l| {
                         let fields: Vec<&str> = l.split(',').collect();
                         format!("{},{},{}", fields[0], fields[1], fields[3])

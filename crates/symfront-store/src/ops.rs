@@ -330,7 +330,7 @@ pub struct AddFile {
     /// Store file name (first path component).
     pub name: String,
     pub hash: String,
-    pub kind: crate::ident::FileKind,
+    pub kind: symfront_ident::FileKind,
     /// Source path recorded in the manifest and refs.ptr — the client's
     /// original path for uploads, the local path for local adds.
     pub source: String,

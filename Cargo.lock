@@ -1927,7 +1927,8 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
- "symfront-core",
+ "symfront-ident",
+ "symfront-store",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -1938,13 +1939,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "symfront-core"
+name = "symfront-ident"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "symfront-store"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "fs2",
  "rayon",
  "serde",
+ "symfront-ident",
  "tempfile",
  "thiserror 2.0.20",
 ]

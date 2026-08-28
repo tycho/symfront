@@ -16,7 +16,7 @@ use reqwest::blocking::Client;
 use serde_json::{json, Value};
 
 use crate::cli::human;
-use symfront_core::TransactionId;
+use symfront_store::TransactionId;
 
 pub enum Credentials {
     Token(String),
@@ -382,7 +382,7 @@ pub fn upload(
     if paths.is_empty() {
         bail!("no paths given");
     }
-    let (candidates, skipped) = symfront_core::ident::collect(paths)?;
+    let (candidates, skipped) = symfront_ident::collect(paths)?;
     for s in &skipped {
         println!("skipped (not a PE or PDB): {}", s.display());
     }

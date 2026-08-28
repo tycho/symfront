@@ -9,7 +9,7 @@ mod web_account;
 mod web_upload;
 
 use clap::{Parser, Subcommand};
-use symfront_core::TransactionId;
+use symfront_store::TransactionId;
 
 /// Manage a Windows NT symbol store on a POSIX host.
 #[derive(Parser)]
