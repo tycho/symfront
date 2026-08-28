@@ -108,7 +108,7 @@ impl ConfigStore {
                 short_id: commit.id().to_string()[..10].to_string(),
                 author: commit.author().name().unwrap_or("?").to_string(),
                 time: commit.time().seconds(),
-                message: commit.summary().unwrap_or("").to_string(),
+                message: commit.summary().ok().flatten().unwrap_or("").to_string(),
             });
         }
         Ok(out)

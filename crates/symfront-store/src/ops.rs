@@ -115,7 +115,7 @@ pub fn delete_transaction(
 
     // Dedupe dirs: a manifest normally lists each dir once, but be safe.
     let mut dirs: Vec<(String, String)> = entries.iter().map(|e| (e.name.clone(), e.hash.clone())).collect();
-    dirs.sort_by(|a, b| (a.0.to_lowercase(), a.1.to_lowercase()).cmp(&(b.0.to_lowercase(), b.1.to_lowercase())));
+    dirs.sort_by_key(|a| (a.0.to_lowercase(), a.1.to_lowercase()));
     dirs.dedup_by(|a, b| a.0.eq_ignore_ascii_case(&b.0) && a.1.eq_ignore_ascii_case(&b.1));
 
     let journal = store.admin_dir().join(format!("{JOURNAL_PREFIX}{id}"));

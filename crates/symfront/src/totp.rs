@@ -1,8 +1,7 @@
 //! RFC 6238 TOTP (SHA-1, 6 digits, 30 s period) with a ±1-step verification
 //! window to tolerate generator clock drift.
 
-use hmac::{Hmac, Mac};
-use rand_core::{OsRng, RngCore};
+use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 
 pub const PERIOD: u64 = 30;
@@ -54,7 +53,7 @@ pub fn base32_decode(s: &str) -> Option<Vec<u8>> {
 /// Fresh 160-bit secret, base32-encoded.
 pub fn generate_secret() -> String {
     let mut buf = [0u8; 20];
-    OsRng.fill_bytes(&mut buf);
+    getrandom::fill(&mut buf).expect("OS RNG");
     base32_encode(&buf)
 }
 

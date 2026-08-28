@@ -14,8 +14,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail, Context, Result};
-use rand_core::{OsRng, RngCore};
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use argon2::Argon2;
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
@@ -131,7 +130,7 @@ fn sha256_hex(s: &str) -> String {
 
 fn random_hex(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
-    OsRng.fill_bytes(&mut buf);
+    getrandom::fill(&mut buf).expect("OS RNG");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -590,9 +589,9 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, ddl: &str) -> Res
 }
 
 fn hash_password(password: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    // password-hash 0.6: the salt is generated internally (getrandom).
     Ok(Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|e| anyhow!("hashing password: {e}"))?
         .to_string())
 }
@@ -605,11 +604,9 @@ fn dummy_hash() -> &'static str {
 }
 
 fn verify_password_hash(password: &str, hash: &str) -> bool {
-    let Ok(parsed) = PasswordHash::new(hash) else {
-        return false;
-    };
+    // argon2 0.6 parses the PHC string itself (malformed -> Err -> false).
     Argon2::default()
-        .verify_password(password.as_bytes(), &parsed)
+        .verify_password(password.as_bytes(), hash)
         .is_ok()
 }
 

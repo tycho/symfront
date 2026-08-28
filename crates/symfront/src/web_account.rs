@@ -53,9 +53,8 @@ fn unix_now() -> u64 {
 }
 
 fn random_token() -> String {
-    use rand_core::{OsRng, RngCore};
-    let mut buf = [0u8; 24];
-    OsRng.fill_bytes(&mut buf);
+        let mut buf = [0u8; 24];
+    getrandom::fill(&mut buf).expect("OS RNG");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 

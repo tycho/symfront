@@ -100,9 +100,8 @@ fn err(code: StatusCode, msg: impl Into<String>) -> ApiError {
 }
 
 fn random_id() -> String {
-    use rand_core::{OsRng, RngCore};
-    let mut buf = [0u8; 12];
-    OsRng.fill_bytes(&mut buf);
+        let mut buf = [0u8; 12];
+    getrandom::fill(&mut buf).expect("OS RNG");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 

@@ -540,9 +540,8 @@ async fn login(
     // session exists.
     if auth.db.totp_secret(user.id)?.is_some() {
         let login_token = {
-            use rand_core::{OsRng, RngCore};
-            let mut buf = [0u8; 24];
-            OsRng.fill_bytes(&mut buf);
+                        let mut buf = [0u8; 24];
+            getrandom::fill(&mut buf).expect("OS RNG");
             buf.iter().map(|b| format!("{b:02x}")).collect::<String>()
         };
         auth.pending_logins.lock().unwrap().insert(

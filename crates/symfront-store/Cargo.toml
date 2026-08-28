@@ -5,12 +5,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-symfront-ident = { path = "../symfront-ident" }
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
-rayon = "1"
-fs2 = "0.4"
+symfront-ident.workspace = true
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+rayon.workspace = true
+fs2.workspace = true
 
 [dev-dependencies]
-tempfile = "3"
+tempfile.workspace = true
