@@ -9,7 +9,7 @@
 //! Client disconnects change nothing — the fill never knew about clients,
 //! and a HEAD-upgraded fill is just a fill with zero tailing clients.
 //!
-//! Completion: fsync → atomic rename into the data tree → metadata commit
+//! Completion: fsync → atomic rename into the storage tree → metadata commit
 //! (awaited; durability gates completion) → watch flips to Done. Failure:
 //! temp file removed, tailing clients get a truncated-stream error.
 
@@ -379,7 +379,19 @@ impl FillJob {
                     if let Some(parent) = fin.parent() {
                         std::fs::create_dir_all(parent)?;
                     }
-                    std::fs::rename(&temp, &fin)
+                    match std::fs::rename(&temp, &fin) {
+                        // temp/ and storage/ on separate filesystems (their
+                        // own ZFS datasets, say): copy, then drop the temp
+                        // file. Late tail-readers open the temp path first
+                        // and fall back to the final one, so the unlink is
+                        // safe once the copy is complete.
+                        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+                            std::fs::copy(&temp, &fin)?;
+                            let _ = std::fs::remove_file(&temp);
+                            Ok(())
+                        }
+                        r => r,
+                    }
                 })
                 .await
                 .map_err(std::io::Error::other)??;

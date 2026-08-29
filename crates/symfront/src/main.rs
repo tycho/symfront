@@ -188,7 +188,7 @@ enum ProxyCommand {
     },
     /// One-shot import of a Python symsrv cache (metadata + payloads).
     Import {
-        /// The symsrv cache root (containing db/ and storage/data/).
+        /// The Python symsrv cache root (its db/ and storage/data/).
         from: std::path::PathBuf,
         /// Copy payload files instead of hardlinking.
         #[arg(long)]

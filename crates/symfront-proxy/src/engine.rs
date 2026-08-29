@@ -101,7 +101,7 @@ impl ProxyEngine {
         upstreams: Vec<Upstream>,
         blacklist: Blacklist,
     ) -> Result<Arc<ProxyEngine>, crate::db::DbError> {
-        let cache = CacheStore::open(&config.cache_path)?;
+        let cache = CacheStore::open(&config.cache)?;
         cache.clean_stale_temps();
         let health = Health::new(
             upstreams.iter().map(|u| u.name.clone()),

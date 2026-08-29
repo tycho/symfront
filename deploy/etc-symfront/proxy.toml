@@ -7,6 +7,19 @@
 # (hardlinks when both live on the same dataset; --copy otherwise)
 path = "/srv/cache/symfront"
 
+# db/, storage/ and temp/ are created under it. Each is overridable, so the
+# ZFS layout drives the config rather than the other way round ({path} is
+# cache.path above; a relative value is taken from it). The split that pays
+# off here: /srv/cache/symfront as one dataset (recordsize=1M,
+# compression=zstd-2, holding storage/ and temp/ so completing a fill is a
+# rename, never a copy) with a nested dataset for db/ (recordsize=64K to
+# match the SQLite page size, compression=lz4). Create the db/ dataset
+# before first start, or `zfs create` will mount over the directory
+# symfront already made and hide the db underneath it.
+#path_db = "{path}/db"
+#path_storage = "{path}/storage"
+#path_temp = "{path}/temp"
+
 # Same budget the Python config declared (it never enforced it; we do).
 # Eviction drops soonest-expiring positive entries at the high watermark.
 size = "512GB"
@@ -15,15 +28,15 @@ size = "512GB"
 
 # "lighttpd" matches the current deployment: cache-hit bodies are offloaded
 # via X-Sendfile, which lighttpd resolves as an absolute filesystem path —
-# so accel_prefix is the cache *data* directory itself (and it must appear
-# in lighttpd's x-sendfile-docroot list).
+# so accel_prefix is the cache *storage* directory itself (and it must
+# appear in lighttpd's x-sendfile-docroot list).
 # "nginx" offloads via X-Accel-Redirect instead; accel_prefix is then the
-# internal-location URI aliasing the data directory (e.g. the
+# internal-location URI aliasing the storage directory (e.g. the
 # /_symfront_cache location in deploy/nginx-symfront.conf.example).
 # "standalone" serves bodies ourselves — richer stats (actual wire bytes,
 # per-response compression ratios) at the cost of the offload.
 mode = "lighttpd"
-accel_prefix = "/srv/cache/symfront/data"
+accel_prefix = "/srv/cache/symfront/storage"
 
 # Offload tier-0 (managed store) hits the same way: the header value is
 # this prefix plus the store-relative path. For lighttpd point it at the

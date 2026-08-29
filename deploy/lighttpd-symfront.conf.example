@@ -64,9 +64,9 @@ proxy.server = ( "" => ( (
     "host"               => "/run/symfront/http.sock",
     "x-sendfile"         => "enable",
     # Allowed X-Sendfile path prefixes. Must cover accel_prefix (the
-    # cache data dir) and accel_store_prefix (the store root).
+    # cache storage dir) and accel_store_prefix (the store root).
     "x-sendfile-docroot" => (
-        "/srv/cache/symfront/data",
+        "/srv/cache/symfront/storage",
         "/srv/symstore",
     ),
 ) ) )

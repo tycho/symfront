@@ -147,7 +147,8 @@ impl CacheMode {
 
 #[derive(Clone, Debug)]
 pub struct ProxyConfig {
-    pub cache_path: PathBuf,
+    /// Where the db, payload and temp directories live.
+    pub cache: crate::cache::CacheLayout,
     /// Total positive-entry size budget; `None` disables eviction.
     pub cache_size: Option<u64>,
     /// Eviction starts above `high_watermark * cache_size` …
@@ -211,7 +212,7 @@ impl Default for CompressionConfig {
 impl Default for ProxyConfig {
     fn default() -> Self {
         ProxyConfig {
-            cache_path: PathBuf::from("/var/cache/symfront"),
+            cache: crate::cache::CacheLayout::under("/var/cache/symfront"),
             cache_size: None,
             high_watermark: 1.0,
             low_watermark: 0.95,
@@ -267,6 +268,9 @@ struct RawQuirks {
 #[serde(deny_unknown_fields)]
 struct RawCache {
     path: Option<PathBuf>,
+    path_db: Option<String>,
+    path_storage: Option<String>,
+    path_temp: Option<String>,
     size: Option<String>,
     high_watermark: Option<f64>,
     low_watermark: Option<f64>,
@@ -380,13 +384,59 @@ fn durations(specs: &[String], what: &str) -> Result<Vec<Duration>, ConfigError>
     specs.iter().map(|s| parse_duration(s)).collect()
 }
 
+/// Expand a `cache.path_*` spec: `{path}` stands for `cache.path`, and a
+/// relative result is taken relative to it. TOML has no variable
+/// references of its own, so this is the one substitution we do — an
+/// unknown placeholder is a typo, not a literal.
+fn expand_cache_path(spec: &str, root: &Path, key: &str) -> Result<PathBuf, ConfigError> {
+    let mut out = String::with_capacity(spec.len());
+    let mut rest = spec;
+    while let Some(open) = rest.find('{') {
+        let (before, tail) = rest.split_at(open);
+        out.push_str(before);
+        let close = tail
+            .find('}')
+            .ok_or_else(|| invalid(format!("cache.{key}: unterminated '{{' in \"{spec}\"")))?;
+        match &tail[1..close] {
+            "path" => out.push_str(&root.to_string_lossy()),
+            other => {
+                return Err(invalid(format!(
+                    "cache.{key}: unknown placeholder {{{other}}} (only {{path}} is supported)"
+                )))
+            }
+        }
+        rest = &tail[close + 1..];
+    }
+    out.push_str(rest);
+    if out.is_empty() {
+        return Err(invalid(format!("cache.{key} is empty")));
+    }
+    let p = PathBuf::from(out);
+    Ok(if p.is_relative() { root.join(p) } else { p })
+}
+
 impl ProxyConfig {
     pub fn from_file(path: &Path) -> Result<ProxyConfig, ConfigError> {
         let raw: RawProxy = read_toml(path)?;
         let mut cfg = ProxyConfig::default();
         if let Some(p) = raw.cache.path {
-            cfg.cache_path = p;
+            cfg.cache = crate::cache::CacheLayout::under(p);
         }
+        let root = cfg.cache.root.clone();
+        for (spec, key, slot) in [
+            (raw.cache.path_db, "path_db", &mut cfg.cache.db_dir),
+            (
+                raw.cache.path_storage,
+                "path_storage",
+                &mut cfg.cache.storage_dir,
+            ),
+            (raw.cache.path_temp, "path_temp", &mut cfg.cache.temp_dir),
+        ] {
+            if let Some(spec) = spec {
+                *slot = expand_cache_path(&spec, &root, key)?;
+            }
+        }
+        cfg.cache.validate().map_err(invalid)?;
         if let Some(s) = raw.cache.size {
             cfg.cache_size = Some(parse_size(&s)?);
         }
@@ -520,5 +570,68 @@ mod tests {
         assert_eq!(parse_size("1024").unwrap(), 1024);
         assert!(parse_duration("5 fortnights").is_err());
         assert!(parse_size("many").is_err());
+    }
+
+    fn cache_toml(body: &str) -> Result<ProxyConfig, ConfigError> {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("proxy.toml");
+        std::fs::write(&f, body).unwrap();
+        ProxyConfig::from_file(&f)
+    }
+
+    #[test]
+    fn cache_layout_defaults_under_the_root() {
+        let cfg = cache_toml("[cache]\npath = \"/srv/cache/sf\"\n").unwrap();
+        assert_eq!(cfg.cache.db_dir, PathBuf::from("/srv/cache/sf/db"));
+        assert_eq!(
+            cfg.cache.storage_dir,
+            PathBuf::from("/srv/cache/sf/storage")
+        );
+        assert_eq!(cfg.cache.temp_dir, PathBuf::from("/srv/cache/sf/temp"));
+        assert!(cfg.cache.storage_excludes().is_empty());
+    }
+
+    #[test]
+    fn cache_paths_expand_and_override() {
+        let cfg = cache_toml(
+            "[cache]\npath = \"/srv/cache/sf\"\n\
+             path_db = \"{path}/db\"\n\
+             path_storage = \"/tank/symbols\"\n\
+             path_temp = \"{path}/storage/temp\"\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.cache.db_dir, PathBuf::from("/srv/cache/sf/db"));
+        assert_eq!(cfg.cache.storage_dir, PathBuf::from("/tank/symbols"));
+        assert_eq!(
+            cfg.cache.temp_dir,
+            PathBuf::from("/srv/cache/sf/storage/temp")
+        );
+        // temp is under the *root*, not under this storage dir: no exclude.
+        assert!(cfg.cache.storage_excludes().is_empty());
+    }
+
+    #[test]
+    fn temp_nested_in_storage_becomes_a_scrub_exclude() {
+        let cfg =
+            cache_toml("[cache]\npath = \"/srv/cache/sf\"\npath_temp = \"{path}/storage/temp\"\n")
+                .unwrap();
+        assert_eq!(
+            cfg.cache.storage_excludes(),
+            vec![PathBuf::from("/srv/cache/sf/storage/temp")]
+        );
+    }
+
+    #[test]
+    fn bad_cache_paths_are_rejected() {
+        // Unknown placeholder — a typo, not a literal directory name.
+        assert!(cache_toml("[cache]\npath_db = \"{root}/db\"\n").is_err());
+        assert!(cache_toml("[cache]\npath_db = \"{path/db\"\n").is_err());
+        // Storage inside temp would put every payload in the reaper's path.
+        assert!(cache_toml(
+            "[cache]\npath = \"/c\"\npath_temp = \"{path}/t\"\npath_storage = \"{path}/t/s\"\n"
+        )
+        .is_err());
+        // Two names for one directory.
+        assert!(cache_toml("[cache]\npath = \"/c\"\npath_temp = \"{path}/storage\"\n").is_err());
     }
 }

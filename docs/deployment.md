@@ -25,11 +25,34 @@ sudo mkdir -p /var/lib/symfront
 sudo symfront user --auth-db /var/lib/symfront/auth.db add steven --role admin
 ```
 
+## 5b. Create the cache datasets
+
+`cache.path` holds three directories, each overridable in `proxy.toml`
+(`path_db`, `path_storage`, `path_temp`; `{path}` expands to `cache.path`).
+The split worth making is db vs. payloads — the SQLite pages want a small
+recordsize, the payloads a large one:
+
+```sh
+sudo zfs create -o recordsize=1M -o compression=zstd-2 tank/cache/symfront
+sudo zfs create -o recordsize=64K -o compression=lz4  tank/cache/symfront/db
+```
+
+Create the `db` dataset **before** the first start, or `zfs create` mounts
+over the directory symfront already made and hides the db underneath it.
+
+`storage/` and `temp/` stay on one dataset on purpose: completing a fill is
+a rename between them, which is free within a filesystem and a full copy
+across one (symfront warns at startup and falls back to copying). Splitting
+them to write fills uncompressed buys nothing — ZFS compresses per record,
+not per file, so the streamed write and a later copy compress identically.
+If you do want temp inside the payload tree, `path_temp = "{path}/storage/temp"`
+is supported; the patrol scrub excludes it.
+
 ## 6. Import the Python cache
 
 Same keying (sha256 of upstream URL), so the entire cache carries over.
-Hardlinks are instant when `/srv/cache/ntsymbols/data` and
-`/srv/cache/symfront` are on the same dataset; otherwise use `--copy`
+Hardlinks are instant when `/srv/cache/ntsymbols/data` and the new
+`/srv/cache/symfront/storage` are on the same dataset; otherwise use `--copy`
 (check `zfs list` first). Verified against the live db: all 26,220 entries
 map cleanly.
 

@@ -98,9 +98,28 @@ the Python implementation.
   symsrv's keying, which is what makes `symfront proxy import` a lossless
   migration.
 - Metadata in SQLite (WAL; the file stays inspectable with plain
-  `sqlite3`), payloads in a sharded data tree. Reads are inline on the
+  `sqlite3`), payloads in a sharded storage tree. Reads are inline on the
   handler; all writes flow through one dedicated writer thread — batched
   access-time/expiry touches, commit-gated fill upserts.
+- The cache root holds three directories, each individually configurable
+  (`cache.path_db` / `path_storage` / `path_temp`, where `{path}` stands
+  for `cache.path`), so any of them can be its own filesystem — ZFS
+  datasets with their own recordsize and compression:
+
+  ```text
+  {cache.path}/
+    db/metadata.db          # SQLite (WAL)
+    storage/aa/bb/<hex64>   # payloads, sharded by key prefix
+    temp/<hex64>.<nonce>    # in-progress fills (crash leftovers reaped)
+  ```
+
+  Completing a fill renames temp → storage, which is cheap only within one
+  filesystem; split across datasets it still works, at one full copy per
+  fill and a warning at startup. (ZFS compresses per record, not per file,
+  so a raw temp dataset buys no compression the direct write doesn't
+  already get.) Pointing `path_temp` or `path_db` *inside* the storage
+  tree is supported: the patrol scrub excludes them, so in-flight fills
+  are never mistaken for orphans.
 - **Positive TTLs slide** on every hit. An expired positive entry is
   **revalidated, not discarded**: conditional GET; 304 refreshes the TTL
   with no re-download; transport failure serves the stale copy
@@ -131,7 +150,8 @@ the Python implementation.
 - **Eviction** enforces `cache.size` between watermarks, dropping
   soonest-expiring positive entries first (with sliding TTLs this
   approximates LRU while staying trivially explainable). A **patrol
-  scrub** cross-checks metadata against the data tree in both directions.
+  scrub** cross-checks metadata against the storage tree in both
+  directions.
   Both run scheduled and on demand (UI job or CLI).
 - Upstream entries can be parked with `enabled = false`: kept in config
   and visible in the UI, never queried.
@@ -146,8 +166,8 @@ compress per-client too — the pump writes raw bytes to disk while each
 tailing client wraps its own reader, so encoding never throttles the
 fill. Cache hits can alternatively be offloaded to nginx via
 `X-Accel-Redirect` (`mode = "nginx"`) or to lighttpd via `X-Sendfile`
-(`mode = "lighttpd"`, with `accel_prefix` set to the absolute cache data
-directory), trading per-response stats for sendfile;
+(`mode = "lighttpd"`, with `accel_prefix` set to the absolute cache
+storage directory), trading per-response stats for sendfile;
 `accel_store_prefix` extends the offload to tier-0 store hits.
 
 The opt-in `[quirks] ghidra_cab` flag handles Ghidra's compression-blind

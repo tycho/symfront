@@ -61,7 +61,7 @@ pub(crate) fn build_engine(config_dir: &Path) -> anyhow::Result<Option<Arc<Proxy
     tracing::info!(
         "proxy tier: {} upstream(s), cache at {}",
         engine.upstreams.len(),
-        engine.config.cache_path.display()
+        engine.config.cache.root.display()
     );
     Ok(Some(engine))
 }

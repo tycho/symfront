@@ -37,7 +37,7 @@ server {
 	# X-Accel offload target for proxy cache hits (mode = "nginx").
 	location ^~ /_symfront_cache/ {
 		internal;
-		alias /srv/cache/symfront/data/;
+		alias /srv/cache/symfront/storage/;
 		sendfile off; # so gzip applies
 		aio threads;
 		tcp_nopush on;

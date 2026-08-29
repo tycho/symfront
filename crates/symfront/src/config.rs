@@ -133,9 +133,22 @@ path = "/srv/symstore"
         r#"# Caching-proxy settings. See upstreams.toml for where misses go.
 
 [cache]
-# Proxy cache root (metadata db + data tree). Separate from the store:
-# disposable by definition.
+# Proxy cache root. Separate from the store: disposable by definition.
 path = "/var/cache/symfront"
+
+# The three directories under it, each overridable so they can live on
+# separate filesystems ({path} expands to cache.path above; a relative
+# value is taken from it):
+#   db/       SQLite metadata      -- 64K recordsize suits the page size
+#   storage/  payload tree         -- large recordsize + compression
+#   temp/     in-progress fills    -- keep with storage/ if you can:
+#                                     completing a fill renames between
+#                                     them, and a split costs a full copy
+# Nesting temp (or db) inside storage is fine — the patrol scrub knows to
+# skip them.
+#path_db = "{path}/db"
+#path_storage = "{path}/storage"
+#path_temp = "{path}/temp"
 
 # Total size budget for positive cache entries. Eviction starts at the high
 # watermark and stops at the low one, dropping soonest-expiring entries first.
@@ -146,7 +159,8 @@ size = "512GB"
 # "standalone": stream cache hits ourselves (richer stats).
 # "nginx": offload cache-hit bodies via X-Accel-Redirect.
 # "lighttpd": offload via X-Sendfile; accel_prefix must then be the
-#             absolute path of the cache data directory.
+#             absolute path of the cache storage directory
+#             ({cache path}/storage).
 mode = "standalone"
 #accel_prefix = "/_symfront_cache"
 # Also offload tier-0 (managed store) hits in the accel modes: the header

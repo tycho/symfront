@@ -174,7 +174,7 @@ fn upstream(name: &str, base: &str) -> Upstream {
 
 fn test_config(dir: &std::path::Path) -> ProxyConfig {
     ProxyConfig {
-        cache_path: dir.to_path_buf(),
+        cache: symfront_proxy::cache::CacheLayout::under(dir),
         stagger: Duration::from_millis(30),
         connect_timeout: Duration::from_millis(500),
         read_timeout: Duration::from_secs(5),
@@ -692,6 +692,73 @@ async fn scrub_repairs_both_directions() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn scrub_skips_db_and_temp_nested_inside_storage() {
+    let fake = Fake::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    // The layout that makes the rename intra-dataset by construction: both
+    // the db and the temp dir live inside the storage tree the scrub walks.
+    let mut cfg = test_config(dir.path());
+    cfg.cache.storage_dir = dir.path().join("storage");
+    cfg.cache.db_dir = cfg.cache.storage_dir.join("db");
+    cfg.cache.temp_dir = cfg.cache.storage_dir.join("temp");
+    let engine = engine_with(dir.path(), cfg, vec![upstream("u", &fake.base_url())]);
+
+    let path = "/a.pdb/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1/a.pdb";
+    fake.set(path, Reply::Body(b"data-here".to_vec()));
+    assert_eq!(fetch(&engine, path).await.0, 200);
+
+    // An in-flight fill: inside storage/, with a name that doesn't parse as
+    // a cache key. Nothing here may be mistaken for an orphan.
+    let in_flight = engine.cache.temp_path(&[0xcdu8; 32]);
+    std::fs::write(&in_flight, b"still downloading").unwrap();
+    let db_file = engine.cache.db_path().to_path_buf();
+    assert!(db_file.starts_with(engine.cache.storage_dir()));
+
+    let report = engine.scrub(true, &MaintProgress::default()).await.unwrap();
+    assert_eq!(report.orphan_files, 0, "nothing in the tree is an orphan");
+    assert!(in_flight.exists(), "scrub reaped an in-progress fill");
+    assert!(db_file.exists(), "scrub reaped the metadata db");
+    let key = symfront_proxy::CacheKey::new("u", &format!("{}{}", fake.base_url(), path));
+    assert!(engine.cache.db.get(&key.hash).unwrap().is_some());
+}
+
+/// The nesting check compares directories, so a temp dir that *reaches*
+/// the storage tree by an indirect route — `..` in the config, or a
+/// symlink — has to compare equal to its real location. It didn't at
+/// first: `std::path::absolute` leaves `..` alone, and the scrub deleted
+/// live fills.
+#[tokio::test(flavor = "multi_thread")]
+async fn scrub_skips_a_nested_temp_reached_indirectly() {
+    for spelling in ["dotdot", "symlink"] {
+        let fake = Fake::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let storage = dir.path().join("storage");
+        std::fs::create_dir_all(&storage).unwrap();
+        let mut cfg = test_config(dir.path());
+        cfg.cache.storage_dir = storage.clone();
+        cfg.cache.temp_dir = match spelling {
+            "dotdot" => dir.path().join("db/../storage/temp"),
+            _ => {
+                let link = dir.path().join("link");
+                std::os::unix::fs::symlink(&storage, &link).unwrap();
+                link.join("temp")
+            }
+        };
+        let engine = engine_with(dir.path(), cfg, vec![upstream("u", &fake.base_url())]);
+
+        let path = "/a.pdb/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1/a.pdb";
+        fake.set(path, Reply::Body(b"data-here".to_vec()));
+        assert_eq!(fetch(&engine, path).await.0, 200);
+        let in_flight = engine.cache.temp_path(&[0xcdu8; 32]);
+        std::fs::write(&in_flight, b"still downloading").unwrap();
+
+        let report = engine.scrub(true, &MaintProgress::default()).await.unwrap();
+        assert_eq!(report.orphan_files, 0, "{spelling}: temp read as an orphan");
+        assert!(in_flight.exists(), "{spelling}: scrub reaped a live fill");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn blacklist_and_unclassifiable_reject_without_traffic() {
     let fake = Fake::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -852,7 +919,7 @@ async fn temp_cleanup_only_reaps_abandoned_files() {
             vec![upstream("u", &fake.base_url())],
         )
     };
-    let tmp_dir = dir.path().join("tmp");
+    let tmp_dir = dir.path().join("temp");
     let fresh = tmp_dir.join("deadbeef.0123456789abcdef.1");
     let stale = tmp_dir.join("cafebabe.0123456789abcdef.2");
     std::fs::write(&fresh, b"in flight").unwrap();

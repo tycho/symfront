@@ -31,7 +31,7 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
 
 pub fn stats(config_dir: &Path) -> Result<()> {
     let engine = engine_for(config_dir)?;
-    println!("cache: {}", engine.config.cache_path.display());
+    println!("cache: {}", engine.config.cache.root.display());
     let rows = engine.cache.db.summary()?;
     if rows.is_empty() {
         println!("cache is empty");
@@ -140,8 +140,9 @@ pub fn import(config_dir: &Path, from: &Path, copy: bool, dry_run: bool) -> Resu
     if !old_data.is_dir() {
         bail!("{} not found", old_data.display());
     }
-    let new_root = engine.config.cache_path.clone();
-    let new_db_path = new_root.join("metadata.db");
+    let new_root = engine.config.cache.root.clone();
+    let new_db_path = engine.cache.db_path().to_path_buf();
+    let new_storage = engine.cache.storage_dir().to_path_buf();
     // The engine created the schema; from here plain connections suffice.
     drop(engine);
 
@@ -206,11 +207,7 @@ pub fn import(config_dir: &Path, from: &Path, copy: bool, dry_run: bool) -> Resu
                 missing += 1;
                 continue;
             }
-            let new_file = new_root
-                .join("data")
-                .join(&hex[0..2])
-                .join(&hex[2..4])
-                .join(&hex);
+            let new_file = new_storage.join(&hex[0..2]).join(&hex[2..4]).join(&hex);
             if !dry_run && !new_file.exists() {
                 std::fs::create_dir_all(new_file.parent().unwrap())?;
                 if copy {
