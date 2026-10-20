@@ -143,10 +143,13 @@ the Python implementation.
   the pipeline drains — and the first 200 wins globally. A slow upstream
   can no longer add its full timeout to worst-case latency.
 - **Health breaker**: trips only on transport-level failure (never on any
-  complete HTTP response, 5xx included). Suspended upstreams still serve
-  cache hits but leave the fan-out; background HEAD probes restore them on
-  any complete response. 4xx are negative-cached; 5xx pass through and are
-  never cached.
+  complete HTTP response, 5xx included): connect failures trip at once, read
+  timeouts and resets after `health.failure_threshold` (default 3) in a row.
+  Suspended upstreams still serve cache hits but leave the fan-out; background
+  HEAD probes restore them on any complete response. An upstream that re-trips
+  within 10 minutes of a restore is held out of probing for 1 min, doubling per
+  repeat up to 15 min. 4xx are negative-cached; 5xx pass through and are never
+  cached.
 - **Eviction** enforces `cache.size` between watermarks, dropping
   soonest-expiring positive entries first (with sliding TTLs this
   approximates LRU while staying trivially explainable). A **patrol

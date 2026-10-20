@@ -24,7 +24,7 @@ use crate::fill::{
     await_outcome, start_fill, FillHandle, FillMeta, FillRegistry, FlightEntry, FlightOutcome,
     FlightSlot,
 };
-use crate::health::Health;
+use crate::health::{FailureVerdict, Health, TransportFailure};
 use crate::key::CacheKey;
 use crate::query::classify_request;
 use crate::stats::{RequestOutcome, Stats};
@@ -107,11 +107,13 @@ impl ProxyEngine {
             upstreams.iter().map(|u| u.name.clone()),
             config.health_probe_interval,
             config.health_probe_timeout,
+            config.health_failure_threshold,
         );
         let mk_client = |redirects: reqwest::redirect::Policy| {
             reqwest::Client::builder()
                 .connect_timeout(config.connect_timeout)
                 .read_timeout(config.read_timeout)
+                .pool_idle_timeout(config.pool_idle_timeout)
                 .redirect(redirects)
                 .build()
                 .expect("building http client")
@@ -131,6 +133,29 @@ impl ProxyEngine {
 
     pub(crate) fn probe_client(&self) -> &reqwest::Client {
         &self.probe_http
+    }
+
+    /// Account for a request that got no complete response: stats, the
+    /// breaker, and one log line carrying the real cause.
+    fn transport_failed(&self, cand: &Candidate, e: &reqwest::Error, sent_at: Instant, what: &str) {
+        let name = &cand.upstream.name;
+        let failure = TransportFailure::from_reqwest(e, sent_at.elapsed());
+        self.stats
+            .upstream(name)
+            .transport_failures
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let breaker = match self.health.record_failure(name, &failure) {
+            FailureVerdict::Counted { n, threshold } => {
+                format!("{n}/{threshold} toward suspending {name:?}")
+            }
+            FailureVerdict::Tripped => format!("suspended {name:?}"),
+            FailureVerdict::AlreadySuspended => format!("{name:?} already suspended"),
+        };
+        tracing::warn!(
+            "upstream {what} of {} failed: {} ({breaker})",
+            cand.key.full_url,
+            failure.detail
+        );
     }
 
     /// The negative-TTL policy for one upstream (global + override).
@@ -381,16 +406,8 @@ impl ProxyEngine {
         let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
-                self.health.trip(&cand.upstream.name, &e.to_string());
-                self.stats
-                    .upstream(&cand.upstream.name)
-                    .transport_failures
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.transport_failed(cand, &e, sent_at, "revalidation");
                 // Stale-while-error: serve the stale entry, expiry unchanged.
-                tracing::debug!(
-                    "revalidation of {} failed ({e}); serving stale",
-                    cand.key.full_url
-                );
                 drop(slot); // publishes Failed; followers serve stale too
                 return self.serve_stale(entry);
             }
@@ -399,6 +416,7 @@ impl ProxyEngine {
         self.stats
             .upstream(&cand.upstream.name)
             .observe_ttfb(status, sent_at.elapsed());
+        self.health.record_success(&cand.upstream.name);
         if status == 304 {
             // Still good: refresh the TTL (slides like any positive hit) and
             // serve from cache without a re-download.
@@ -595,16 +613,8 @@ impl ProxyEngine {
             Ok(r) => r,
             Err(e) => {
                 // Transport-level failure: no complete request/response
-                // cycle. Suspend the upstream; probes restore it.
-                self.health.trip(&cand.upstream.name, &e.to_string());
-                self.stats
-                    .upstream(&cand.upstream.name)
-                    .transport_failures
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                tracing::warn!(
-                    "upstream request to {} failed at the transport level: {e}",
-                    cand.key.full_url
-                );
+                // cycle. Counts toward suspending the upstream.
+                self.transport_failed(cand, &e, sent_at, "fetch");
                 return AttemptResult::Failed; // slot drop publishes Failed
             }
         };
@@ -612,6 +622,7 @@ impl ProxyEngine {
         self.stats
             .upstream(&cand.upstream.name)
             .observe_ttfb(status, sent_at.elapsed());
+        self.health.record_success(&cand.upstream.name);
         if status == 200 {
             match self.begin_fill(cand, response, Some(slot)).await {
                 Some(handle) => AttemptResult::Success(Outcome::Fill {
@@ -770,6 +781,7 @@ impl ProxyEngine {
                 self.stats
                     .upstream(&cand.upstream.name)
                     .observe_ttfb(status, sent_at.elapsed());
+                self.health.record_success(&cand.upstream.name);
                 if status == 200 {
                     AttemptResult::Success(Outcome::Passthrough {
                         response: Box::new(response),
@@ -781,7 +793,7 @@ impl ProxyEngine {
                 }
             }
             Err(e) => {
-                self.health.trip(&cand.upstream.name, &e.to_string());
+                self.transport_failed(cand, &e, sent_at, "passthrough");
                 AttemptResult::Failed
             }
         }

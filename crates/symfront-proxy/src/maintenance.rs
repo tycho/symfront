@@ -247,13 +247,14 @@ impl ProxyEngine {
     }
 
     /// One pass of the suspended-upstream prober. Any complete HTTP
-    /// response (any status) restores an upstream.
+    /// response (any status) restores an upstream, unless it is still in
+    /// a flap hold.
     pub async fn probe_suspended_once(&self) {
         for name in self.health.suspended_names() {
             let Some(upstream) = self.upstreams.iter().find(|u| u.name == name) else {
                 continue;
             };
-            if !upstream.enabled {
+            if !upstream.enabled || !self.health.probe_due(&name) {
                 continue;
             }
             let ok = self.probe_base(&upstream.base_url).await;
@@ -273,7 +274,10 @@ impl ProxyEngine {
         {
             Ok(_) => true,
             Err(e) => {
-                tracing::debug!("probe of {base_url} failed: {e}");
+                tracing::debug!(
+                    "probe of {base_url} failed: {}",
+                    crate::health::error_chain(&e)
+                );
                 false
             }
         }

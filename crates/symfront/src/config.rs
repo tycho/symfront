@@ -181,6 +181,10 @@ negative = ["1h", "1h", "1h", "8h", "8h", "24h", "7d"]
 # complete HTTP response restores them.
 probe_interval = "30s"
 probe_timeout = "15s"
+# Read timeouts and resets suspend an upstream only after this many in a
+# row (any complete response resets the count); connect failures suspend
+# at once.
+#failure_threshold = 3
 
 [fanout]
 # Delay between launching successive priority tiers. 0 = flat fan-out.

@@ -166,10 +166,18 @@ pub struct ProxyConfig {
     pub ttl: TtlPolicy,
     pub health_probe_interval: Duration,
     pub health_probe_timeout: Duration,
+    /// Consecutive transport failures on established connections (read
+    /// timeouts, resets) that suspend an upstream. Connect failures
+    /// always suspend at once.
+    pub health_failure_threshold: u32,
     /// Delay between launching successive priority tiers (0 = flat).
     pub stagger: Duration,
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
+    /// Idle keep-alive connections are closed after this long. Keep it
+    /// under the upstreams' own idle-close timeouts, or a request can land
+    /// on a connection the server is tearing down.
+    pub pool_idle_timeout: Duration,
     /// Minimum build-id length (hex chars) for a query to be offered to
     /// debuginfod upstreams. Real GNU build-ids are 32-40 hex chars;
     /// Sentry probes PE modules through SSQP ELF keys with 13-char
@@ -222,9 +230,11 @@ impl Default for ProxyConfig {
             ttl: TtlPolicy::default(),
             health_probe_interval: Duration::from_secs(30),
             health_probe_timeout: Duration::from_secs(15),
+            health_failure_threshold: 3,
             stagger: Duration::from_millis(100),
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(20),
+            pool_idle_timeout: Duration::from_secs(30),
             min_buildid_hex: 32,
             dns_prewarm_interval: Duration::from_secs(60),
             ghidra_cab_quirk: false,
@@ -291,6 +301,7 @@ struct RawTtl {
 struct RawHealth {
     probe_interval: Option<String>,
     probe_timeout: Option<String>,
+    failure_threshold: Option<u32>,
 }
 
 #[derive(Deserialize, Default)]
@@ -299,6 +310,7 @@ struct RawFanout {
     stagger: Option<String>,
     connect_timeout: Option<String>,
     read_timeout: Option<String>,
+    pool_idle_timeout: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -473,6 +485,9 @@ impl ProxyConfig {
         if let Some(s) = raw.health.probe_timeout {
             cfg.health_probe_timeout = parse_duration(&s)?;
         }
+        if let Some(v) = raw.health.failure_threshold {
+            cfg.health_failure_threshold = v.max(1);
+        }
         if let Some(s) = raw.fanout.stagger {
             cfg.stagger = parse_duration(&s)?;
         }
@@ -481,6 +496,9 @@ impl ProxyConfig {
         }
         if let Some(s) = raw.fanout.read_timeout {
             cfg.read_timeout = parse_duration(&s)?;
+        }
+        if let Some(s) = raw.fanout.pool_idle_timeout {
+            cfg.pool_idle_timeout = parse_duration(&s)?;
         }
         if let Some(v) = raw.debuginfod.min_buildid_hex {
             cfg.min_buildid_hex = v;
