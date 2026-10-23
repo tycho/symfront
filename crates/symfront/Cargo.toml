@@ -35,8 +35,15 @@ toml.workspace = true
 toml_edit.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-webauthn-rs.workspace = true
 cab.workspace = true
 tempfile.workspace = true
+
+# webauthn-rs is hard-wired to the `openssl` crate, which Linux and macOS
+# satisfy from the system and Windows cannot without vendoring OpenSSL or
+# bringing in a second crypto library. So passkeys are a non-Windows
+# feature: build.rs turns this table into the `passkeys` cfg the code is
+# gated on. Password and TOTP login are unaffected.
+[target.'cfg(not(windows))'.dependencies]
+webauthn-rs.workspace = true
 
 [dev-dependencies]

@@ -2,7 +2,6 @@
 //! and size on disk (`st_blocks * 512`), organized by hash directory.
 
 use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::SystemTime;
@@ -96,8 +95,20 @@ pub struct ScanResult {
     pub with_refs: bool,
 }
 
-fn meta_sizes(md: &fs::Metadata) -> (u64, u64) {
-    (md.len(), md.blocks() * 512)
+/// `(apparent, on_disk)` bytes for a file: `st_size` and `st_blocks * 512`.
+///
+/// Only Unix exposes the allocated size through `std`; elsewhere the on-disk
+/// figure falls back to the apparent size, so sparse and compressed files
+/// are over-counted there rather than guessed at.
+pub fn meta_sizes(md: &fs::Metadata) -> (u64, u64) {
+    #[cfg(unix)]
+    let disk = {
+        use std::os::unix::fs::MetadataExt;
+        md.blocks() * 512
+    };
+    #[cfg(not(unix))]
+    let disk = md.len();
+    (md.len(), disk)
 }
 
 /// Walk the whole store. `read_refs` additionally parses every `refs.ptr`

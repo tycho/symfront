@@ -284,6 +284,8 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Only passkey login looks users up by name today; keep it around.
+    #[cfg_attr(not(passkeys), allow(dead_code))]
     pub fn user_by_name(&self, name: &str) -> Result<Option<User>> {
         let conn = self.conn.lock().unwrap();
         Ok(conn
@@ -321,6 +323,7 @@ impl AuthDb {
     }
 
     /// Every stored passkey: (passkey row id, owning user id, credential JSON).
+    #[cfg(passkeys)]
     pub fn all_passkey_creds(&self) -> Result<Vec<(i64, i64, String)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT id, user_id, cred FROM passkeys ORDER BY id")?;
@@ -367,7 +370,11 @@ impl AuthDb {
     }
 
     // ----- Passkeys (WebAuthn credentials, serialized JSON) -----
+    //
+    // Listing and deleting work in every build; the credential accessors
+    // only serve the WebAuthn ceremonies, which are `cfg(passkeys)`.
 
+    #[cfg(passkeys)]
     pub fn passkey_add(&self, user_id: i64, name: &str, cred_json: &str) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "INSERT INTO passkeys(user_id, name, cred, created_at) VALUES(?1, ?2, ?3, ?4)",
@@ -393,6 +400,7 @@ impl AuthDb {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    #[cfg(passkeys)]
     pub fn passkey_creds(&self, user_id: i64) -> Result<Vec<(i64, String)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt =
@@ -401,6 +409,7 @@ impl AuthDb {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    #[cfg(passkeys)]
     pub fn passkey_update_cred(&self, id: i64, cred_json: &str) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "UPDATE passkeys SET cred = ?1, last_used_at = ?2 WHERE id = ?3",

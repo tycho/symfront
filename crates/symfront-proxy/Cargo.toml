@@ -17,6 +17,13 @@ tokio = { workspace = true, features = ["rt", "sync", "time", "fs", "macros"] }
 toml.workspace = true
 tracing.workspace = true
 
+# aws-lc-sys (rustls' crypto provider) assembles its x86_64 code with NASM.
+# With this feature it falls back to the prebuilt objects shipped in the
+# crate when `nasm` is not on PATH, so a Windows build needs only MSVC and
+# CMake. It changes nothing when NASM is installed.
+[target.'cfg(windows)'.dependencies]
+aws-lc-rs = { workspace = true, features = ["prebuilt-nasm"] }
+
 [dev-dependencies]
 axum.workspace = true
 serde_json.workspace = true

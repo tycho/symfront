@@ -5,7 +5,9 @@
 //! deliberately limited to the symbol-store API and cannot manage accounts.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(passkeys)]
+use std::time::Instant;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Path as AxPath, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -13,11 +15,14 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::json;
+#[cfg(passkeys)]
 use webauthn_rs::prelude::{Passkey, PublicKeyCredential, RegisterPublicKeyCredential, Uuid};
 
 use crate::auth::{Role, SESSION_TTL};
 use crate::totp;
-use crate::web::{ApiError, App, AuthCtx, AuthState, PendingLogin, PendingReg};
+#[cfg(passkeys)]
+use crate::web::PendingReg;
+use crate::web::{ApiError, App, AuthCtx, AuthState, PendingLogin};
 
 type ApiResult<T> = std::result::Result<T, ApiError>;
 
@@ -53,6 +58,7 @@ fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
+#[cfg(passkeys)]
 fn random_token() -> String {
     let mut buf = [0u8; 24];
     getrandom::fill(&mut buf).expect("OS RNG");
@@ -63,10 +69,12 @@ fn prune_pending(auth: &AuthState) {
     auth.pending_logins.lock().unwrap().retain(|_, p| {
         let created = match p {
             PendingLogin::Totp { created, .. } => created,
+            #[cfg(passkeys)]
             PendingLogin::WebAuthn { created, .. } => created,
         };
         created.elapsed() < PENDING_TTL
     });
+    #[cfg(passkeys)]
     auth.pending_regs
         .lock()
         .unwrap()
@@ -149,12 +157,42 @@ pub(crate) async fn login_totp(
 }
 
 // ---------- login: WebAuthn ----------
+//
+// Everything that touches the relying party is `cfg(passkeys)` (compiled out
+// on Windows, see build.rs); listing and deleting stored passkeys further
+// down is plain database work and stays available everywhere.
 
+/// Routes that need the WebAuthn relying party. Empty where passkeys are
+/// compiled out, so the paths 404 like any unknown route.
+pub(crate) fn passkey_routes() -> axum::Router<App> {
+    #[cfg(passkeys)]
+    {
+        use axum::routing::post;
+        axum::Router::new()
+            .route("/api/login/webauthn/start", post(login_webauthn_start))
+            .route("/api/login/webauthn/finish", post(login_webauthn_finish))
+            .route(
+                "/api/account/passkeys/register/start",
+                post(passkey_register_start),
+            )
+            .route(
+                "/api/account/passkeys/register/finish",
+                post(passkey_register_finish),
+            )
+    }
+    #[cfg(not(passkeys))]
+    {
+        axum::Router::new()
+    }
+}
+
+#[cfg(passkeys)]
 #[derive(Deserialize)]
 pub(crate) struct WebAuthnStartRequest {
     username: String,
 }
 
+#[cfg(passkeys)]
 pub(crate) async fn login_webauthn_start(
     State(state): State<App>,
     Json(req): Json<WebAuthnStartRequest>,
@@ -195,12 +233,14 @@ pub(crate) async fn login_webauthn_start(
     ))
 }
 
+#[cfg(passkeys)]
 #[derive(Deserialize)]
 pub(crate) struct WebAuthnFinishRequest {
     login_token: String,
     credential: PublicKeyCredential,
 }
 
+#[cfg(passkeys)]
 pub(crate) async fn login_webauthn_finish(
     State(state): State<App>,
     Extension(crate::web::ClientIp(ip)): Extension<crate::web::ClientIp>,
@@ -424,10 +464,11 @@ pub(crate) async fn my_passkeys(
     let ctx = session_user(&ctx)?;
     Ok(Json(json!({
         "passkeys": auth.db.passkeys_meta(ctx.user.id)?,
-        "webauthn_available": auth.webauthn.is_some(),
+        "webauthn_available": auth.passkeys_available(),
     })))
 }
 
+#[cfg(passkeys)]
 pub(crate) async fn passkey_register_start(
     State(state): State<App>,
     ctx: Option<Extension<AuthCtx>>,
@@ -472,6 +513,7 @@ pub(crate) async fn passkey_register_start(
     Ok(Json(json!({ "reg_token": reg_token, "challenge": ccr })))
 }
 
+#[cfg(passkeys)]
 #[derive(Deserialize)]
 pub(crate) struct PasskeyFinishRequest {
     reg_token: String,
@@ -480,6 +522,7 @@ pub(crate) struct PasskeyFinishRequest {
     credential: RegisterPublicKeyCredential,
 }
 
+#[cfg(passkeys)]
 pub(crate) async fn passkey_register_finish(
     State(state): State<App>,
     ctx: Option<Extension<AuthCtx>>,
@@ -548,7 +591,7 @@ pub(crate) async fn account_overview(
         "totp_enabled": auth.db.totp_secret(ctx.user.id)?.is_some(),
         "passkeys": auth.db.passkeys_meta(ctx.user.id)?,
         "tokens": auth.db.list_tokens(Some(ctx.user.id))?,
-        "webauthn_available": auth.webauthn.is_some(),
+        "webauthn_available": auth.passkeys_available(),
     })))
 }
 

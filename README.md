@@ -264,6 +264,8 @@ $ symfront token --auth-db … create ci-bot --label "ci uploads"
 - Web sign-in: password (+ TOTP if enrolled) or WebAuthn passkey; HttpOnly
   session cookies. API tokens (`Authorization: Bearer sf_…`) are scoped to
   the store/proxy API and can never reach account/admin endpoints.
+  Passkeys are compiled out of Windows builds (see Building); password
+  and TOTP sign-in work everywhere.
 - Behind nginx set `trusted_proxies = 1` so audit logs see real client
   IPs and cookies are marked `Secure`. No TLS built in — front with a
   reverse proxy.
@@ -276,6 +278,17 @@ unit (`ExecReload` sends SIGHUP), and `docs/deployment.md` — the runbook
 for migrating off Python symsrv: import the cache, parallel-run on a beta
 vhost, benchmark against the Python instance (regressions block cutover),
 then move the main vhost over and retire the raw-autoindex private vhost.
+
+## Building
+
+Plain `cargo build --release`. Linux and macOS additionally need the
+OpenSSL development package: `webauthn-rs` links the system library
+(never a vendored copy). Windows (MSVC) needs only the C++ build tools
+and CMake, which compiles AWS-LC, rustls' crypto provider, and falls back
+to prebuilt objects when NASM is absent. There is no OpenSSL on Windows,
+so passkeys are compiled out there: `crates/symfront/build.rs` turns the
+`cfg(not(windows))` dependency on `webauthn-rs` into the `passkeys` cfg
+the login code is gated on.
 
 ## Testing
 

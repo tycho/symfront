@@ -633,9 +633,10 @@ mod tests {
         let cfg =
             cache_toml("[cache]\npath = \"/srv/cache/sf\"\npath_temp = \"{path}/storage/temp\"\n")
                 .unwrap();
+        // Excludes come back absolute; on Windows that prefixes a drive.
         assert_eq!(
             cfg.cache.storage_excludes(),
-            vec![PathBuf::from("/srv/cache/sf/storage/temp")]
+            vec![std::path::absolute("/srv/cache/sf/storage/temp").unwrap()]
         );
     }
 

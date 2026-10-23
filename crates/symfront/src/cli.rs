@@ -326,9 +326,9 @@ pub fn tx_show(store_path: &Path, id: TransactionId) -> anyhow::Result<()> {
             for ent in rd.flatten() {
                 if let Ok(md) = ent.metadata() {
                     if md.is_file() {
-                        use std::os::unix::fs::MetadataExt;
-                        size += md.len();
-                        disk += md.blocks() * 512;
+                        let (apparent, on_disk) = scan::meta_sizes(&md);
+                        size += apparent;
+                        disk += on_disk;
                         found = true;
                     }
                 }

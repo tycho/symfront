@@ -101,6 +101,7 @@ pub(crate) enum PendingLogin {
         user_id: i64,
         created: Instant,
     },
+    #[cfg(passkeys)]
     WebAuthn {
         state: webauthn_rs::prelude::PasskeyAuthentication,
         created: Instant,
@@ -108,6 +109,7 @@ pub(crate) enum PendingLogin {
 }
 
 /// An in-flight passkey registration ceremony for a logged-in user.
+#[cfg(passkeys)]
 pub(crate) struct PendingReg {
     pub user_id: i64,
     pub state: webauthn_rs::prelude::PasskeyRegistration,
@@ -117,9 +119,26 @@ pub(crate) struct PendingReg {
 pub(crate) struct AuthState {
     pub db: Arc<AuthDb>,
     /// None when no usable origin could be configured.
+    #[cfg(passkeys)]
     pub webauthn: Option<webauthn_rs::Webauthn>,
     pub pending_logins: Mutex<HashMap<String, PendingLogin>>,
+    #[cfg(passkeys)]
     pub pending_regs: Mutex<HashMap<String, PendingReg>>,
+}
+
+impl AuthState {
+    /// Whether passkey ceremonies can run here: compiled in (not on
+    /// Windows; see build.rs) and configured with a usable origin.
+    pub fn passkeys_available(&self) -> bool {
+        #[cfg(passkeys)]
+        {
+            self.webauthn.is_some()
+        }
+        #[cfg(not(passkeys))]
+        {
+            false
+        }
+    }
 }
 
 /// Who is making this request, resolved by the auth middleware.
@@ -584,8 +603,65 @@ async fn me(State(state): State<App>, headers: HeaderMap) -> Json<serde_json::Va
             Json(json!({
                 "auth_enabled": true,
                 "user": user,
-                "webauthn_available": auth.webauthn.is_some(),
+                "webauthn_available": auth.passkeys_available(),
             }))
+        }
+    }
+}
+
+/// Build the WebAuthn relying party for the configured (or guessed) origin;
+/// None, with a warning, when there is no usable one.
+#[cfg(passkeys)]
+fn build_webauthn(
+    configured_origin: Option<&str>,
+    on_unix_socket: bool,
+    listen: &str,
+) -> Option<webauthn_rs::Webauthn> {
+    // Passkeys only work in secure contexts: localhost over http, or
+    // anything behind an https-terminating proxy with a matching
+    // webauthn_origin. The localhost guess only makes sense when we
+    // actually listen on TCP — on a unix socket the public origin is
+    // whatever the fronting proxy serves, and we can't know it.
+    let origin_str = configured_origin.map(str::to_string).or_else(|| {
+        if on_unix_socket {
+            None
+        } else {
+            let port = listen.rsplit(':').next().unwrap_or("8710");
+            Some(format!("http://localhost:{port}"))
+        }
+    });
+    let Some(origin_str) = origin_str else {
+        tracing::warn!(
+            "webauthn disabled: listening on a unix socket with no \
+             webauthn_origin configured; set it to the public URL \
+             (e.g. https://symbols.example.com) in server.toml"
+        );
+        return None;
+    };
+    let built = (|| -> anyhow::Result<webauthn_rs::Webauthn> {
+        let origin = webauthn_rs::prelude::Url::parse(&origin_str)?;
+        let rp_id = origin
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("origin has no host"))?
+            .to_string();
+        Ok(webauthn_rs::WebauthnBuilder::new(&rp_id, &origin)?
+            .rp_name("symfront")
+            .build()?)
+    })();
+    match built {
+        Ok(w) => {
+            let guessed = if configured_origin.is_none() {
+                " (guessed from the listen address; set \
+                 webauthn_origin to serve any other URL)"
+            } else {
+                ""
+            };
+            tracing::info!("webauthn enabled for origin {origin_str}{guessed}");
+            Some(w)
+        }
+        Err(e) => {
+            tracing::warn!("webauthn disabled: {e} (origin {origin_str})");
+            None
         }
     }
 }
@@ -644,62 +720,24 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
                     path.display()
                 );
             }
-            // Passkeys only work in secure contexts: localhost over http, or
-            // anything behind an https-terminating proxy with a matching
-            // webauthn_origin. The localhost guess only makes sense when we
-            // actually listen on TCP — on a unix socket the public origin is
-            // whatever the fronting proxy serves, and we can't know it.
-            let origin_str = webauthn_origin.clone().or_else(|| {
-                if uds.is_some() {
-                    None
-                } else {
-                    let port = listen.rsplit(':').next().unwrap_or("8710");
-                    Some(format!("http://localhost:{port}"))
-                }
-            });
-            let webauthn = match &origin_str {
-                None => {
+            #[cfg(passkeys)]
+            let webauthn = build_webauthn(webauthn_origin.as_deref(), uds.is_some(), &listen);
+            #[cfg(not(passkeys))]
+            {
+                if webauthn_origin.is_some() {
                     tracing::warn!(
-                        "webauthn disabled: listening on a unix socket with no \
-                         webauthn_origin configured; set it to the public URL \
-                         (e.g. https://symbols.example.com) in server.toml"
+                        "webauthn_origin is set but this build has no passkey support \
+                         (Windows); password and TOTP login remain available"
                     );
-                    None
                 }
-                Some(origin_str) => {
-                    let built = (|| -> anyhow::Result<webauthn_rs::Webauthn> {
-                        let origin = webauthn_rs::prelude::Url::parse(origin_str)?;
-                        let rp_id = origin
-                            .host_str()
-                            .ok_or_else(|| anyhow::anyhow!("origin has no host"))?
-                            .to_string();
-                        Ok(webauthn_rs::WebauthnBuilder::new(&rp_id, &origin)?
-                            .rp_name("symfront")
-                            .build()?)
-                    })();
-                    match built {
-                        Ok(w) => {
-                            let guessed = if webauthn_origin.is_none() {
-                                " (guessed from the listen address; set \
-                                 webauthn_origin to serve any other URL)"
-                            } else {
-                                ""
-                            };
-                            tracing::info!("webauthn enabled for origin {origin_str}{guessed}");
-                            Some(w)
-                        }
-                        Err(e) => {
-                            tracing::warn!("webauthn disabled: {e} (origin {origin_str})");
-                            None
-                        }
-                    }
-                }
-            };
+            }
             tracing::info!("authentication enabled ({})", path.display());
             Some(Arc::new(AuthState {
                 db: Arc::new(db),
+                #[cfg(passkeys)]
                 webauthn,
                 pending_logins: Mutex::new(HashMap::new()),
+                #[cfg(passkeys)]
                 pending_regs: Mutex::new(HashMap::new()),
             }))
         }
@@ -821,14 +859,7 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         .route("/api/jobs/{id}", get(crate::web_upload::job_status))
         .route("/api/login", post(login))
         .route("/api/login/totp", post(web_account::login_totp))
-        .route(
-            "/api/login/webauthn/start",
-            post(web_account::login_webauthn_start),
-        )
-        .route(
-            "/api/login/webauthn/finish",
-            post(web_account::login_webauthn_finish),
-        )
+        .merge(web_account::passkey_routes())
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
         .route("/api/account", get(web_account::account_overview))
@@ -843,14 +874,6 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
         .route("/api/account/totp/enable", post(web_account::totp_enable))
         .route("/api/account/totp/disable", post(web_account::totp_disable))
         .route("/api/account/passkeys", get(web_account::my_passkeys))
-        .route(
-            "/api/account/passkeys/register/start",
-            post(web_account::passkey_register_start),
-        )
-        .route(
-            "/api/account/passkeys/register/finish",
-            post(web_account::passkey_register_finish),
-        )
         .route(
             "/api/account/passkeys/{id}",
             delete(web_account::passkey_delete),
@@ -1242,9 +1265,9 @@ async fn tx_detail(
                         for ent in rd.flatten() {
                             if let Ok(md) = ent.metadata() {
                                 if md.is_file() {
-                                    use std::os::unix::fs::MetadataExt;
-                                    size += md.len();
-                                    disk += md.blocks() * 512;
+                                    let (apparent, on_disk) = scan::meta_sizes(&md);
+                                    size += apparent;
+                                    disk += on_disk;
                                     files += 1;
                                     found = true;
                                 }

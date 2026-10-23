@@ -207,11 +207,11 @@ fn delete_one_ref(
             let known = candidates.iter().any(|c| fname.eq_ignore_ascii_case(c));
             let md = ent.metadata().map_err(|e| Error::io(ent.path(), e))?;
             if known && md.is_file() {
-                use std::os::unix::fs::MetadataExt;
+                let (apparent, disk) = crate::scan::meta_sizes(&md);
                 out.files_removed += 1;
-                out.freed_apparent += md.len();
-                out.freed_disk += md.blocks() * 512;
-                progress.count_file(md.len(), md.blocks() * 512);
+                out.freed_apparent += apparent;
+                out.freed_disk += disk;
+                progress.count_file(apparent, disk);
                 if !dry_run {
                     fs::remove_file(ent.path()).map_err(|e| Error::io(ent.path(), e))?;
                 }
@@ -644,11 +644,14 @@ pub fn prune_strays(
     for rel in rel_paths {
         progress.done.fetch_add(1, Ordering::Relaxed);
         let rel_path = Path::new(rel);
-        if rel_path.is_absolute()
-            || rel_path
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
+        // Component-wise rather than `is_absolute()`: on Windows a rooted
+        // path without a drive (`/etc/passwd`) or a drive without a root
+        // (`C:foo`) is not "absolute", yet `root.join()` would still leave
+        // the store with it.
+        if rel_path.components().any(|c| {
+            use std::path::Component::{ParentDir, Prefix, RootDir};
+            matches!(c, Prefix(_) | RootDir | ParentDir)
+        }) {
             return Err(Error::Refused(format!("path escapes store: {rel}")));
         }
         if rel_path.starts_with(crate::store::ADMIN_DIR) {
@@ -679,11 +682,11 @@ pub fn prune_strays(
                 Some(_) => out.skipped.push(format!("{rel}: directory not empty")),
             }
         } else {
-            use std::os::unix::fs::MetadataExt;
+            let (apparent, disk) = crate::scan::meta_sizes(&md);
             out.files_removed += 1;
-            out.freed_apparent += md.len();
-            out.freed_disk += md.blocks() * 512;
-            progress.count_file(md.len(), md.blocks() * 512);
+            out.freed_apparent += apparent;
+            out.freed_disk += disk;
+            progress.count_file(apparent, disk);
             if !dry_run {
                 fs::remove_file(&abs).map_err(|e| Error::io(&abs, e))?;
             }

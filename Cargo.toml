@@ -17,6 +17,9 @@ symfront-proxy = { path = "crates/symfront-proxy" }
 
 anyhow = "1"
 argon2 = "0.6"
+# Only named here so the Windows build can tweak it; see the
+# `[target.'cfg(windows)'.dependencies]` table in symfront-proxy.
+aws-lc-rs = { version = "1", default-features = false }
 async-compression = { version = "0.4", features = ["tokio", "gzip", "zstd"] }
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

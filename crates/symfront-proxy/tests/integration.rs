@@ -740,7 +740,15 @@ async fn scrub_skips_a_nested_temp_reached_indirectly() {
             "dotdot" => dir.path().join("db/../storage/temp"),
             _ => {
                 let link = dir.path().join("link");
+                #[cfg(unix)]
                 std::os::unix::fs::symlink(&storage, &link).unwrap();
+                // Creating symlinks on Windows needs Developer Mode or a
+                // privilege; without it this spelling cannot be exercised.
+                #[cfg(windows)]
+                if std::os::windows::fs::symlink_dir(&storage, &link).is_err() {
+                    eprintln!("skipping symlink spelling: cannot create symlinks here");
+                    continue;
+                }
                 link.join("temp")
             }
         };
